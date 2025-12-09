@@ -1,0 +1,423 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+
+import "@openzeppelin/contracts-upgradeable/token/ERC1155/ERC1155Upgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+
+/**
+ * @title InfrastructureBonds - COMPLETE PRODUCTION VERSION
+ * @notice ESG-linked infrastructure bonds with revenue stream tracking
+ */
+contract InfrastructureBonds is 
+    Initializable,
+    ERC1155Upgradeable,
+    AccessControlUpgradeable,
+    PausableUpgradeable,
+    ReentrancyGuard,
+    UUPSUpgradeable
+{
+    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
+    bytes32 public constant ISSUER_ROLE = keccak256("ISSUER_ROLE");
+    bytes32 public constant AUDITOR_ROLE = keccak256("AUDITOR_ROLE");
+    bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
+    
+    enum ProjectType {
+        Port,
+        Airport,
+        Railway,
+        Highway,
+        Energy,
+        Water,
+        Telecom,
+        SmartCity,
+        GreenEnergy,
+        Hospital,
+        Education
+    }
+    
+    enum BondStatus {
+        Active,
+        Performing,
+        Underperforming,
+        Matured,
+        Defaulted
+    }
+    
+    struct InfrastructureBond {
+        uint256 bondId;
+        ProjectType projectType;
+        address issuer;
+        string projectName;
+        string location;
+        uint256 totalSupply;
+        uint256 faceValue;
+        uint256 couponRate;
+        uint256 maturityDate;
+        uint256 issuanceDate;
+        BondStatus status;
+        uint256 targetRevenue;
+        uint256 actualRevenue;
+        ESGScore esgScore;
+        bool isGreenBond;
+        bytes32 projectDocHash;
+    }
+    
+    struct ESGScore {
+        uint256 environmental;
+        uint256 social;
+        uint256 governance;
+        uint256 totalScore;
+        uint256 lastUpdate;
+    }
+    
+    struct RevenueStream {
+        uint256 streamId;
+        string source;
+        uint256 projectedAmount;
+        uint256 actualAmount;
+        uint256 reportDate;
+        address auditor;
+        bool verified;
+    }
+    
+    struct PerformanceMetrics {
+        uint256 cargoThroughput;
+        uint256 passengerVolume;
+        uint256 energyGenerated;
+        uint256 waterDistributed;
+        uint256 connectivityUsers;
+        uint256 lastUpdate;
+    }
+
+    struct BondIssuanceParams {
+        ProjectType projectType;
+        string projectName;
+        string location;
+        uint256 totalSupply;
+        uint256 faceValue;
+        uint256 couponRate;
+        uint256 maturityDate;
+        uint256 targetRevenue;
+        bool isGreenBond;
+        bytes32 projectDocHash;
+    }
+
+    mapping(uint256 => InfrastructureBond) public bonds;
+    mapping(uint256 => RevenueStream[]) public revenueStreams;
+    mapping(uint256 => PerformanceMetrics) public performanceMetrics;
+    mapping(uint256 => uint256) public carbonReduction;
+    mapping(uint256 => uint256) public jobsCreated;
+    
+    uint256 public bondCounter;
+    uint256 public greenBondPremium;
+    uint256 public minESGScore;
+    
+    uint256 public constant BASIS_POINTS = 10000;
+    uint256 public constant MAX_ESG_SCORE = 100;
+    
+    event BondIssued(
+        uint256 indexed bondId,
+        address indexed issuer,
+        ProjectType projectType,
+        uint256 totalSupply
+    );
+    event RevenueReported(uint256 indexed bondId, uint256 streamId, uint256 amount);
+    event ESGScoreUpdated(uint256 indexed bondId, uint256 totalScore);
+    event PerformanceUpdated(uint256 indexed bondId);
+    event StatusChanged(uint256 indexed bondId, BondStatus newStatus);
+    
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+    
+    function initialize(
+        address admin,
+        string memory uri,
+        uint256 _greenBondPremium,
+        uint256 _minESGScore
+    ) public initializer {
+        __ERC1155_init(uri);
+        __AccessControl_init();
+        __Pausable_init();
+        
+        _grantRole(DEFAULT_ADMIN_ROLE, admin);
+        _grantRole(ADMIN_ROLE, admin);
+        _grantRole(ISSUER_ROLE, admin);
+        _grantRole(AUDITOR_ROLE, admin);
+        _grantRole(UPGRADER_ROLE, admin);
+        
+        greenBondPremium = _greenBondPremium;
+        minESGScore = _minESGScore;
+    }
+    
+    function issueBond(BondIssuanceParams memory params)
+        external
+        onlyRole(ISSUER_ROLE)
+        whenNotPaused
+        returns (uint256)
+    {
+        require(params.totalSupply > 0 && params.faceValue > 0, "Invalid parameters");
+        require(params.maturityDate > block.timestamp, "Invalid maturity");
+
+        uint256 bondId = ++bondCounter;
+
+        bonds[bondId] = InfrastructureBond({
+            bondId: bondId,
+            projectType: params.projectType,
+            issuer: msg.sender,
+            projectName: params.projectName,
+            location: params.location,
+            totalSupply: params.totalSupply,
+            faceValue: params.faceValue,
+            couponRate: params.isGreenBond ? params.couponRate + greenBondPremium : params.couponRate,
+            maturityDate: params.maturityDate,
+            issuanceDate: block.timestamp,
+            status: BondStatus.Active,
+            targetRevenue: params.targetRevenue,
+            actualRevenue: 0,
+            esgScore: ESGScore({
+                environmental: 0,
+                social: 0,
+                governance: 0,
+                totalScore: 0,
+                lastUpdate: block.timestamp
+            }),
+            isGreenBond: params.isGreenBond,
+            projectDocHash: params.projectDocHash
+        });
+
+        _mint(msg.sender, bondId, params.totalSupply, "");
+
+        emit BondIssued(bondId, msg.sender, params.projectType, params.totalSupply);
+
+        return bondId;
+    }
+    
+    function reportRevenue(
+        uint256 bondId,
+        string memory source,
+        uint256 projectedAmount,
+        uint256 actualAmount
+    ) external onlyRole(AUDITOR_ROLE) returns (uint256) {
+        InfrastructureBond storage bond = bonds[bondId];
+        require(bond.status == BondStatus.Active || bond.status == BondStatus.Performing, "Invalid status");
+        
+        uint256 streamId = revenueStreams[bondId].length;
+        
+        revenueStreams[bondId].push(RevenueStream({
+            streamId: streamId,
+            source: source,
+            projectedAmount: projectedAmount,
+            actualAmount: actualAmount,
+            reportDate: block.timestamp,
+            auditor: msg.sender,
+            verified: true
+        }));
+        
+        bond.actualRevenue += actualAmount;
+        
+        // Update performance status
+        _updatePerformanceStatus(bondId);
+        
+        emit RevenueReported(bondId, streamId, actualAmount);
+        
+        return streamId;
+    }
+    
+    function updateESGScore(
+        uint256 bondId,
+        uint256 environmental,
+        uint256 social,
+        uint256 governance
+    ) external onlyRole(AUDITOR_ROLE) {
+        require(
+            environmental <= MAX_ESG_SCORE &&
+            social <= MAX_ESG_SCORE &&
+            governance <= MAX_ESG_SCORE,
+            "Invalid scores"
+        );
+        
+        InfrastructureBond storage bond = bonds[bondId];
+        
+        bond.esgScore = ESGScore({
+            environmental: environmental,
+            social: social,
+            governance: governance,
+            totalScore: (environmental + social + governance) / 3,
+            lastUpdate: block.timestamp
+        });
+        
+        emit ESGScoreUpdated(bondId, bond.esgScore.totalScore);
+    }
+    
+    function updatePerformanceMetrics(
+        uint256 bondId,
+        uint256 cargoThroughput,
+        uint256 passengerVolume,
+        uint256 energyGenerated,
+        uint256 waterDistributed,
+        uint256 connectivityUsers
+    ) external onlyRole(AUDITOR_ROLE) {
+        performanceMetrics[bondId] = PerformanceMetrics({
+            cargoThroughput: cargoThroughput,
+            passengerVolume: passengerVolume,
+            energyGenerated: energyGenerated,
+            waterDistributed: waterDistributed,
+            connectivityUsers: connectivityUsers,
+            lastUpdate: block.timestamp
+        });
+        
+        emit PerformanceUpdated(bondId);
+    }
+    
+    function updateCarbonReduction(uint256 bondId, uint256 tonsCO2) 
+        external 
+        onlyRole(AUDITOR_ROLE) 
+    {
+        carbonReduction[bondId] = tonsCO2;
+    }
+    
+    function updateJobsCreated(uint256 bondId, uint256 jobs) 
+        external 
+        onlyRole(AUDITOR_ROLE) 
+    {
+        jobsCreated[bondId] = jobs;
+    }
+    
+    function _updatePerformanceStatus(uint256 bondId) internal {
+        InfrastructureBond storage bond = bonds[bondId];
+        
+        if (bond.actualRevenue == 0) return;
+        
+        uint256 performanceRatio = (bond.actualRevenue * 100) / bond.targetRevenue;
+        
+        if (performanceRatio >= 100) {
+            bond.status = BondStatus.Performing;
+        } else if (performanceRatio >= 80) {
+            bond.status = BondStatus.Active;
+        } else {
+            bond.status = BondStatus.Underperforming;
+            emit StatusChanged(bondId, BondStatus.Underperforming);
+        }
+    }
+    
+    function matureBond(uint256 bondId) 
+        external 
+        onlyRole(ADMIN_ROLE) 
+    {
+        InfrastructureBond storage bond = bonds[bondId];
+        require(block.timestamp >= bond.maturityDate, "Not matured");
+        
+        bond.status = BondStatus.Matured;
+        emit StatusChanged(bondId, BondStatus.Matured);
+    }
+    
+    function markAsDefaulted(uint256 bondId) 
+        external 
+        onlyRole(ADMIN_ROLE) 
+    {
+        bonds[bondId].status = BondStatus.Defaulted;
+        emit StatusChanged(bondId, BondStatus.Defaulted);
+    }
+    
+    function setGreenBondPremium(uint256 premium) 
+        external 
+        onlyRole(ADMIN_ROLE) 
+    {
+        require(premium <= 500, "Premium too high"); // Max 5%
+        greenBondPremium = premium;
+    }
+    
+    function setMinESGScore(uint256 score) 
+        external 
+        onlyRole(ADMIN_ROLE) 
+    {
+        require(score <= MAX_ESG_SCORE, "Invalid score");
+        minESGScore = score;
+    }
+    
+    function pause() external onlyRole(ADMIN_ROLE) {
+        _pause();
+    }
+    
+    function unpause() external onlyRole(ADMIN_ROLE) {
+        _unpause();
+    }
+    
+    function getBond(uint256 bondId) 
+        external 
+        view 
+        returns (InfrastructureBond memory) 
+    {
+        return bonds[bondId];
+    }
+    
+    function getRevenueStreams(uint256 bondId) 
+        external 
+        view 
+        returns (RevenueStream[] memory) 
+    {
+        return revenueStreams[bondId];
+    }
+    
+    function getPerformanceMetrics(uint256 bondId) 
+        external 
+        view 
+        returns (PerformanceMetrics memory) 
+    {
+        return performanceMetrics[bondId];
+    }
+    
+    function getESGScore(uint256 bondId) 
+        external 
+        view 
+        returns (ESGScore memory) 
+    {
+        return bonds[bondId].esgScore;
+    }
+    
+    function getCarbonReduction(uint256 bondId) 
+        external 
+        view 
+        returns (uint256) 
+    {
+        return carbonReduction[bondId];
+    }
+    
+    function getJobsCreated(uint256 bondId) 
+        external 
+        view 
+        returns (uint256) 
+    {
+        return jobsCreated[bondId];
+    }
+    
+    function _update(
+        address from,
+        address to,
+        uint256[] memory ids,
+        uint256[] memory amounts
+    ) internal override whenNotPaused {
+        super._update(from, to, ids, amounts);
+    }
+    
+    function supportsInterface(bytes4 interfaceId)
+        public
+        view
+        override(ERC1155Upgradeable, AccessControlUpgradeable)
+        returns (bool)
+    {
+        return super.supportsInterface(interfaceId);
+    }
+    
+    function _authorizeUpgrade(address newImplementation)
+        internal
+        override
+        onlyRole(UPGRADER_ROLE)
+    {}
+}
