@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Contracts (last updated v5.5.0) (access/extensions/AccessControlEnumerable.sol)
+// OpenZeppelin Contracts (last updated v5.0.0) (access/extensions/AccessControlEnumerable.sol)
 
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.20;
 
 import {IAccessControlEnumerable} from "./IAccessControlEnumerable.sol";
 import {AccessControl} from "../AccessControl.sol";
 import {EnumerableSet} from "../../utils/structs/EnumerableSet.sol";
-import {IERC165} from "../../utils/introspection/ERC165.sol";
 
 /**
  * @dev Extension of {AccessControl} that allows enumerating the members of each role.
@@ -16,7 +15,9 @@ abstract contract AccessControlEnumerable is IAccessControlEnumerable, AccessCon
 
     mapping(bytes32 role => EnumerableSet.AddressSet) private _roleMembers;
 
-    /// @inheritdoc IERC165
+    /**
+     * @dev See {IERC165-supportsInterface}.
+     */
     function supportsInterface(bytes4 interfaceId) public view virtual override returns (bool) {
         return interfaceId == type(IAccessControlEnumerable).interfaceId || super.supportsInterface(interfaceId);
     }
@@ -43,18 +44,6 @@ abstract contract AccessControlEnumerable is IAccessControlEnumerable, AccessCon
      */
     function getRoleMemberCount(bytes32 role) public view virtual returns (uint256) {
         return _roleMembers[role].length();
-    }
-
-    /**
-     * @dev Return all accounts that have `role`
-     *
-     * WARNING: This operation will copy the entire storage to memory, which can be quite expensive. This is designed
-     * to mostly be used by view accessors that are queried without any gas fees. Developers should keep in mind that
-     * this function has an unbounded cost, and using it as part of a state-changing function may render the function
-     * uncallable if the set grows to a point where copying to memory consumes too much gas to fit in a block.
-     */
-    function getRoleMembers(bytes32 role) public view virtual returns (address[] memory) {
-        return _roleMembers[role].values();
     }
 
     /**

@@ -2,8 +2,7 @@ const fs = require('fs');
 const { findAll, astDereferencer, srcDecoder } = require('solidity-ast/utils');
 const { extractStorageLayout } = require('@openzeppelin/upgrades-core/dist/storage/extract');
 
-const { hideBin } = require('yargs/helpers');
-const { argv } = require('yargs/yargs')(hideBin(process.argv));
+const { _ } = require('yargs').argv;
 
 const skipPath = ['contracts/mocks/', 'contracts-exposed/'];
 const skipKind = ['interface', 'library'];
@@ -36,4 +35,4 @@ function extractLayouts(path) {
   return layout;
 }
 
-console.log(JSON.stringify(Object.assign(...argv._.map(extractLayouts))));
+console.log(JSON.stringify(Object.assign(..._.map(extractLayouts))));

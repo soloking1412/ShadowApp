@@ -1,9 +1,6 @@
 const path = require('path');
 const minimatch = require('minimatch');
 
-const { isFallbackFunction } = require('solhint/lib/common/ast-types');
-const { hasLeadingUnderscore } = require('solhint/lib/common/identifier-naming');
-
 // Files matching these patterns will be ignored unless a rule has `static global = true`
 const ignore = ['contracts/mocks/**/*', 'test/**/*'];
 
@@ -17,8 +14,8 @@ class Base {
     }
   }
 
-  require(condition, node, message) {
-    if (!condition && !this.ignored) {
+  error(node, message) {
+    if (!this.ignored) {
       this.reporter.error(node, this.ruleId, message);
     }
   }
@@ -26,15 +23,22 @@ class Base {
 
 module.exports = [
   class extends Base {
+    static ruleId = 'interface-names';
+
+    ContractDefinition(node) {
+      if (node.kind === 'interface' && !/^I[A-Z]/.test(node.name)) {
+        this.error(node, 'Interface names should have a capital I prefix');
+      }
+    }
+  },
+
+  class extends Base {
     static ruleId = 'private-variables';
 
     VariableDeclaration(node) {
-      if (node.isStateVar) {
-        this.require(
-          node.isDeclaredConst || node.isImmutable || node.visibility === 'private',
-          node,
-          'State variables must be private',
-        );
+      const constantOrImmutable = node.isDeclaredConst || node.isImmutable;
+      if (node.isStateVar && !constantOrImmutable && node.visibility !== 'private') {
+        this.error(node, 'State variables must be private');
       }
     }
   },
@@ -44,75 +48,37 @@ module.exports = [
 
     VariableDeclaration(node) {
       if (node.isDeclaredConst) {
-        this.require(!hasLeadingUnderscore(node.name), node, 'Constant variables should not have leading underscore');
-      } else if (node.isStateVar) {
-        switch (node.visibility) {
-          case 'private':
-            this.require(hasLeadingUnderscore(node.name), node, 'Private state variables must have leading underscore');
-            break;
-          case 'internal':
-            this.require(
-              hasLeadingUnderscore(node.name),
-              node,
-              'Internal state variables must have leading underscore',
-            );
-            break;
-          case 'public':
-            this.require(
-              !hasLeadingUnderscore(node.name),
-              node,
-              'Public state variables should not have leading underscore',
-            );
-            break;
+        // TODO: expand visibility and fix
+        if (node.visibility === 'private' && /^_/.test(node.name)) {
+          this.error(node, 'Constant variables should not have leading underscore');
+        }
+      } else if (node.visibility === 'private' && !/^_/.test(node.name)) {
+        this.error(node, 'Non-constant private variables must have leading underscore');
+      }
+    }
+
+    FunctionDefinition(node) {
+      if (node.visibility === 'private' || (node.visibility === 'internal' && node.parent.kind !== 'library')) {
+        if (!/^_/.test(node.name)) {
+          this.error(node, 'Private and internal functions must have leading underscore');
+        }
+      }
+      if (node.visibility === 'internal' && node.parent.kind === 'library') {
+        if (/^_/.test(node.name)) {
+          this.error(node, 'Library internal functions should not have leading underscore');
         }
       }
     }
-
-    FunctionDefinition(node) {
-      switch (node.visibility) {
-        case 'external':
-          this.require(!hasLeadingUnderscore(node.name), node, 'External functions should not have leading underscore');
-          break;
-        case 'public':
-          this.require(!hasLeadingUnderscore(node.name), node, 'Public functions should not have leading underscore');
-          break;
-        case 'internal':
-          this.require(
-            hasLeadingUnderscore(node.name) !== (node.parent.kind === 'library'),
-            node,
-            node.parent.kind === 'library'
-              ? 'Library internal functions should not have leading underscore'
-              : 'Non-library internal functions must have leading underscore',
-          );
-          break;
-        case 'private':
-          this.require(hasLeadingUnderscore(node.name), node, 'Private functions must have leading underscore');
-          break;
-      }
-    }
   },
 
-  class extends Base {
-    static ruleId = 'no-external-virtual';
-
-    FunctionDefinition(node) {
-      if (node.visibility == 'external' && node.isVirtual) {
-        this.require(isFallbackFunction(node), node, 'Functions should not be external and virtual');
-      }
-    }
-  },
-
-  class extends Base {
-    static ruleId = 'no-public-library';
-
-    FunctionDefinition(node) {
-      if (node.parent.kind === 'library') {
-        this.require(
-          node.visibility === 'internal' || node.visibility === 'private',
-          node,
-          'Library functions should be internal or private',
-        );
-      }
-    }
-  },
+  // TODO: re-enable and fix
+  // class extends Base {
+  //   static ruleId = 'no-external-virtual';
+  //
+  //   FunctionDefinition(node) {
+  //     if (node.visibility == 'external' && node.isVirtual) {
+  //       this.error(node, 'Functions should not be external and virtual');
+  //     }
+  //   }
+  // },
 ];

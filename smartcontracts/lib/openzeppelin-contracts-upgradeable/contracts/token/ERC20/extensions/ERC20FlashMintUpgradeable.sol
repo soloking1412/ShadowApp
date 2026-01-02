@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Contracts (last updated v5.1.0) (token/ERC20/extensions/ERC20FlashMint.sol)
+// OpenZeppelin Contracts (last updated v5.0.0) (token/ERC20/extensions/ERC20FlashMint.sol)
 
 pragma solidity ^0.8.20;
 
 import {IERC3156FlashBorrower} from "@openzeppelin/contracts/interfaces/IERC3156FlashBorrower.sol";
 import {IERC3156FlashLender} from "@openzeppelin/contracts/interfaces/IERC3156FlashLender.sol";
 import {ERC20Upgradeable} from "../ERC20Upgradeable.sol";
-import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
+import {Initializable} from "../../../proxy/utils/Initializable.sol";
 
 /**
- * @dev Implementation of the ERC-3156 Flash loans extension, as defined in
+ * @dev Implementation of the ERC3156 Flash loans extension, as defined in
  * https://eips.ethereum.org/EIPS/eip-3156[ERC-3156].
  *
  * Adds the {flashLoan} method, which provides flash loan support at the token
@@ -33,7 +33,7 @@ abstract contract ERC20FlashMintUpgradeable is Initializable, ERC20Upgradeable, 
     error ERC3156ExceededMaxLoan(uint256 maxLoan);
 
     /**
-     * @dev The receiver of a flashloan is not a valid {IERC3156FlashBorrower-onFlashLoan} implementer.
+     * @dev The receiver of a flashloan is not a valid {onFlashLoan} implementer.
      */
     error ERC3156InvalidReceiver(address receiver);
 

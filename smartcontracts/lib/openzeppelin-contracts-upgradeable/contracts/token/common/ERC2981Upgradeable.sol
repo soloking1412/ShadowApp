@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Contracts (last updated v5.4.0) (token/common/ERC2981.sol)
+// OpenZeppelin Contracts (last updated v5.0.0) (token/common/ERC2981.sol)
 
 pragma solidity ^0.8.20;
 
 import {IERC2981} from "@openzeppelin/contracts/interfaces/IERC2981.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {ERC165Upgradeable} from "../../utils/introspection/ERC165Upgradeable.sol";
-import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
+import {Initializable} from "../../proxy/utils/Initializable.sol";
 
 /**
  * @dev Implementation of the NFT Royalty Standard, a standardized way to retrieve royalty payment information.
@@ -18,7 +18,7 @@ import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.s
  * fee is specified in basis points by default.
  *
  * IMPORTANT: ERC-2981 only specifies a way to signal royalty information and does not enforce its payment. See
- * https://eips.ethereum.org/EIPS/eip-2981#optional-royalty-payments[Rationale] in the ERC. Marketplaces are expected to
+ * https://eips.ethereum.org/EIPS/eip-2981#optional-royalty-payments[Rationale] in the EIP. Marketplaces are expected to
  * voluntarily pay royalties together with sales, but note that this standard is not yet widely supported.
  */
 abstract contract ERC2981Upgradeable is Initializable, IERC2981, ERC165Upgradeable {
@@ -53,7 +53,7 @@ abstract contract ERC2981Upgradeable is Initializable, IERC2981, ERC165Upgradeab
     error ERC2981InvalidDefaultRoyaltyReceiver(address receiver);
 
     /**
-     * @dev The royalty set for a specific `tokenId` is invalid (eg. (numerator / denominator) >= 1).
+     * @dev The royalty set for an specific `tokenId` is invalid (eg. (numerator / denominator) >= 1).
      */
     error ERC2981InvalidTokenRoyalty(uint256 tokenId, uint256 numerator, uint256 denominator);
 
@@ -67,29 +67,27 @@ abstract contract ERC2981Upgradeable is Initializable, IERC2981, ERC165Upgradeab
 
     function __ERC2981_init_unchained() internal onlyInitializing {
     }
-    /// @inheritdoc IERC165
+    /**
+     * @dev See {IERC165-supportsInterface}.
+     */
     function supportsInterface(bytes4 interfaceId) public view virtual override(IERC165, ERC165Upgradeable) returns (bool) {
         return interfaceId == type(IERC2981).interfaceId || super.supportsInterface(interfaceId);
     }
 
-    /// @inheritdoc IERC2981
-    function royaltyInfo(
-        uint256 tokenId,
-        uint256 salePrice
-    ) public view virtual returns (address receiver, uint256 amount) {
+    /**
+     * @inheritdoc IERC2981
+     */
+    function royaltyInfo(uint256 tokenId, uint256 salePrice) public view virtual returns (address, uint256) {
         ERC2981Storage storage $ = _getERC2981Storage();
-        RoyaltyInfo storage _royaltyInfo = $._tokenRoyaltyInfo[tokenId];
-        address royaltyReceiver = _royaltyInfo.receiver;
-        uint96 royaltyFraction = _royaltyInfo.royaltyFraction;
+        RoyaltyInfo memory royalty = $._tokenRoyaltyInfo[tokenId];
 
-        if (royaltyReceiver == address(0)) {
-            royaltyReceiver = $._defaultRoyaltyInfo.receiver;
-            royaltyFraction = $._defaultRoyaltyInfo.royaltyFraction;
+        if (royalty.receiver == address(0)) {
+            royalty = $._defaultRoyaltyInfo;
         }
 
-        uint256 royaltyAmount = (salePrice * royaltyFraction) / _feeDenominator();
+        uint256 royaltyAmount = (salePrice * royalty.royaltyFraction) / _feeDenominator();
 
-        return (royaltyReceiver, royaltyAmount);
+        return (royalty.receiver, royaltyAmount);
     }
 
     /**

@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Contracts (last updated v5.5.0) (governance/extensions/GovernorVotesQuorumFraction.sol)
+// OpenZeppelin Contracts (last updated v5.0.0) (governance/extensions/GovernorVotesQuorumFraction.sol)
 
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.20;
 
 import {GovernorVotesUpgradeable} from "./GovernorVotesUpgradeable.sol";
-import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {Checkpoints} from "@openzeppelin/contracts/utils/structs/Checkpoints.sol";
-import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
+import {Initializable} from "../../proxy/utils/Initializable.sol";
 
 /**
  * @dev Extension of {Governor} for voting weight extraction from an {ERC20Votes} token and a quorum expressed as a
@@ -65,7 +64,18 @@ abstract contract GovernorVotesQuorumFractionUpgradeable is Initializable, Gover
      */
     function quorumNumerator(uint256 timepoint) public view virtual returns (uint256) {
         GovernorVotesQuorumFractionStorage storage $ = _getGovernorVotesQuorumFractionStorage();
-        return _optimisticUpperLookupRecent($._quorumNumeratorHistory, timepoint);
+        uint256 length = $._quorumNumeratorHistory._checkpoints.length;
+
+        // Optimistic search, check the latest checkpoint
+        Checkpoints.Checkpoint208 storage latest = $._quorumNumeratorHistory._checkpoints[length - 1];
+        uint48 latestKey = latest._key;
+        uint208 latestValue = latest._value;
+        if (latestKey <= timepoint) {
+            return latestValue;
+        }
+
+        // Otherwise, do the binary search
+        return $._quorumNumeratorHistory.upperLookupRecent(SafeCast.toUint48(timepoint));
     }
 
     /**
@@ -79,7 +89,7 @@ abstract contract GovernorVotesQuorumFractionUpgradeable is Initializable, Gover
      * @dev Returns the quorum for a timepoint, in terms of number of votes: `supply * numerator / denominator`.
      */
     function quorum(uint256 timepoint) public view virtual override returns (uint256) {
-        return Math.mulDiv(token().getPastTotalSupply(timepoint), quorumNumerator(timepoint), quorumDenominator());
+        return (token().getPastTotalSupply(timepoint) * quorumNumerator(timepoint)) / quorumDenominator();
     }
 
     /**
@@ -92,7 +102,7 @@ abstract contract GovernorVotesQuorumFractionUpgradeable is Initializable, Gover
      * - Must be called through a governance proposal.
      * - New numerator must be smaller or equal to the denominator.
      */
-    function updateQuorumNumerator(uint256 newQuorumNumerator) public virtual onlyGovernance {
+    function updateQuorumNumerator(uint256 newQuorumNumerator) external virtual onlyGovernance {
         _updateQuorumNumerator(newQuorumNumerator);
     }
 
@@ -116,18 +126,5 @@ abstract contract GovernorVotesQuorumFractionUpgradeable is Initializable, Gover
         $._quorumNumeratorHistory.push(clock(), SafeCast.toUint208(newQuorumNumerator));
 
         emit QuorumNumeratorUpdated(oldQuorumNumerator, newQuorumNumerator);
-    }
-
-    /**
-     * @dev Returns the numerator at a specific timepoint.
-     */
-    function _optimisticUpperLookupRecent(
-        Checkpoints.Trace208 storage ckpts,
-        uint256 timepoint
-    ) internal view returns (uint256) {
-        // If trace is empty, key and value are both equal to 0.
-        // In that case `key <= timepoint` is true, and it is ok to return 0.
-        (, uint48 key, uint208 value) = ckpts.latestCheckpoint();
-        return key <= timepoint ? value : ckpts.upperLookupRecent(SafeCast.toUint48(timepoint));
     }
 }

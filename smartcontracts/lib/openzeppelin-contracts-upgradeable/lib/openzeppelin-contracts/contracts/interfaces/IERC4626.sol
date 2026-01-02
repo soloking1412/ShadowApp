@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Contracts (last updated v5.5.0) (interfaces/IERC4626.sol)
+// OpenZeppelin Contracts (last updated v5.0.0) (interfaces/IERC4626.sol)
 
-pragma solidity >=0.6.2;
+pragma solidity ^0.8.20;
 
 import {IERC20} from "../token/ERC20/IERC20.sol";
 import {IERC20Metadata} from "../token/ERC20/extensions/IERC20Metadata.sol";
 
 /**
- * @dev Interface of the ERC-4626 "Tokenized Vault Standard", as defined in
+ * @dev Interface of the ERC4626 "Tokenized Vault Standard", as defined in
  * https://eips.ethereum.org/EIPS/eip-4626[ERC-4626].
  */
 interface IERC4626 is IERC20, IERC20Metadata {
@@ -96,7 +96,7 @@ interface IERC4626 is IERC20, IERC20Metadata {
     function previewDeposit(uint256 assets) external view returns (uint256 shares);
 
     /**
-     * @dev Deposit `assets` underlying tokens and send the corresponding number of vault shares (`shares`) to `receiver`.
+     * @dev Mints shares Vault shares to receiver by depositing exactly amount of underlying tokens.
      *
      * - MUST emit the Deposit event.
      * - MAY support an additional flow in which the underlying tokens are owned by the Vault contract before the
@@ -134,7 +134,7 @@ interface IERC4626 is IERC20, IERC20Metadata {
     function previewMint(uint256 shares) external view returns (uint256 assets);
 
     /**
-     * @dev Mints exactly `shares` vault shares to `receiver` in exchange for `assets` underlying tokens.
+     * @dev Mints exactly shares Vault shares to receiver by depositing amount of underlying tokens.
      *
      * - MUST emit the Deposit event.
      * - MAY support an additional flow in which the underlying tokens are owned by the Vault contract before the mint
@@ -198,7 +198,7 @@ interface IERC4626 is IERC20, IERC20Metadata {
     function maxRedeem(address owner) external view returns (uint256 maxShares);
 
     /**
-     * @dev Allows an on-chain or off-chain user to simulate the effects of their redemption at the current block,
+     * @dev Allows an on-chain or off-chain user to simulate the effects of their redeemption at the current block,
      * given current on-chain conditions.
      *
      * - MUST return as close to and no more than the exact amount of assets that would be withdrawn in a redeem call

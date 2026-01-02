@@ -1,87 +1,83 @@
-const { ethers } = require('hardhat');
+const { expectEvent } = require('@openzeppelin/test-helpers');
 const { expect } = require('chai');
-const { loadFixture } = require('@nomicfoundation/hardhat-network-helpers');
 
-async function fixture() {
-  const [pauser] = await ethers.getSigners();
+const { expectRevertCustomError } = require('../helpers/customError');
 
-  const mock = await ethers.deployContract('PausableMock');
+const PausableMock = artifacts.require('PausableMock');
 
-  return { pauser, mock };
-}
+contract('Pausable', function (accounts) {
+  const [pauser] = accounts;
 
-describe('Pausable', function () {
   beforeEach(async function () {
-    Object.assign(this, await loadFixture(fixture));
+    this.pausable = await PausableMock.new();
   });
 
-  describe('when unpaused', function () {
+  context('when unpaused', function () {
     beforeEach(async function () {
-      expect(await this.mock.paused()).to.be.false;
+      expect(await this.pausable.paused()).to.equal(false);
     });
 
     it('can perform normal process in non-pause', async function () {
-      expect(await this.mock.count()).to.equal(0n);
+      expect(await this.pausable.count()).to.be.bignumber.equal('0');
 
-      await this.mock.normalProcess();
-      expect(await this.mock.count()).to.equal(1n);
+      await this.pausable.normalProcess();
+      expect(await this.pausable.count()).to.be.bignumber.equal('1');
     });
 
     it('cannot take drastic measure in non-pause', async function () {
-      await expect(this.mock.drasticMeasure()).to.be.revertedWithCustomError(this.mock, 'ExpectedPause');
-
-      expect(await this.mock.drasticMeasureTaken()).to.be.false;
+      await expectRevertCustomError(this.pausable.drasticMeasure(), 'ExpectedPause', []);
+      expect(await this.pausable.drasticMeasureTaken()).to.equal(false);
     });
 
-    describe('when paused', function () {
+    context('when paused', function () {
       beforeEach(async function () {
-        this.tx = await this.mock.pause();
+        this.receipt = await this.pausable.pause({ from: pauser });
       });
 
-      it('emits a Paused event', async function () {
-        await expect(this.tx).to.emit(this.mock, 'Paused').withArgs(this.pauser);
+      it('emits a Paused event', function () {
+        expectEvent(this.receipt, 'Paused', { account: pauser });
       });
 
       it('cannot perform normal process in pause', async function () {
-        await expect(this.mock.normalProcess()).to.be.revertedWithCustomError(this.mock, 'EnforcedPause');
+        await expectRevertCustomError(this.pausable.normalProcess(), 'EnforcedPause', []);
       });
 
       it('can take a drastic measure in a pause', async function () {
-        await this.mock.drasticMeasure();
-        expect(await this.mock.drasticMeasureTaken()).to.be.true;
+        await this.pausable.drasticMeasure();
+        expect(await this.pausable.drasticMeasureTaken()).to.equal(true);
       });
 
       it('reverts when re-pausing', async function () {
-        await expect(this.mock.pause()).to.be.revertedWithCustomError(this.mock, 'EnforcedPause');
+        await expectRevertCustomError(this.pausable.pause(), 'EnforcedPause', []);
       });
 
       describe('unpausing', function () {
         it('is unpausable by the pauser', async function () {
-          await this.mock.unpause();
-          expect(await this.mock.paused()).to.be.false;
+          await this.pausable.unpause();
+          expect(await this.pausable.paused()).to.equal(false);
         });
 
-        describe('when unpaused', function () {
+        context('when unpaused', function () {
           beforeEach(async function () {
-            this.tx = await this.mock.unpause();
+            this.receipt = await this.pausable.unpause({ from: pauser });
           });
 
-          it('emits an Unpaused event', async function () {
-            await expect(this.tx).to.emit(this.mock, 'Unpaused').withArgs(this.pauser);
+          it('emits an Unpaused event', function () {
+            expectEvent(this.receipt, 'Unpaused', { account: pauser });
           });
 
           it('should resume allowing normal process', async function () {
-            expect(await this.mock.count()).to.equal(0n);
-            await this.mock.normalProcess();
-            expect(await this.mock.count()).to.equal(1n);
+            expect(await this.pausable.count()).to.be.bignumber.equal('0');
+            await this.pausable.normalProcess();
+            expect(await this.pausable.count()).to.be.bignumber.equal('1');
           });
 
           it('should prevent drastic measure', async function () {
-            await expect(this.mock.drasticMeasure()).to.be.revertedWithCustomError(this.mock, 'ExpectedPause');
+            await expectRevertCustomError(this.pausable.drasticMeasure(), 'ExpectedPause', []);
           });
 
           it('reverts when re-unpausing', async function () {
-            await expect(this.mock.unpause()).to.be.revertedWithCustomError(this.mock, 'ExpectedPause');
+            await expectRevertCustomError(this.pausable.unpause(), 'ExpectedPause', []);
           });
         });
       });

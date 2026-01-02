@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Contracts (last updated v5.4.0) (token/ERC20/extensions/ERC20Wrapper.sol)
+// OpenZeppelin Contracts (last updated v5.0.0) (token/ERC20/extensions/ERC20Wrapper.sol)
 
 pragma solidity ^0.8.20;
 
@@ -7,19 +7,14 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {ERC20Upgradeable} from "../ERC20Upgradeable.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
+import {Initializable} from "../../../proxy/utils/Initializable.sol";
 
 /**
- * @dev Extension of the ERC-20 token contract to support token wrapping.
+ * @dev Extension of the ERC20 token contract to support token wrapping.
  *
  * Users can deposit and withdraw "underlying tokens" and receive a matching number of "wrapped tokens". This is useful
  * in conjunction with other modules. For example, combining this wrapping mechanism with {ERC20Votes} will allow the
- * wrapping of an existing "basic" ERC-20 into a governance token.
- *
- * WARNING: Any mechanism in which the underlying token changes the {balanceOf} of an account without an explicit transfer
- * may desynchronize this contract's supply and its underlying balance. Please exercise caution when wrapping tokens that
- * may undercollateralize the wrapper (i.e. wrapper's total supply is higher than its underlying balance). See {_recover}
- * for recovering value accrued to the wrapper.
+ * wrapping of an existing "basic" ERC20 into a governance token.
  */
 abstract contract ERC20WrapperUpgradeable is Initializable, ERC20Upgradeable {
     /// @custom:storage-location erc7201:openzeppelin.storage.ERC20Wrapper
@@ -53,7 +48,9 @@ abstract contract ERC20WrapperUpgradeable is Initializable, ERC20Upgradeable {
         $._underlying = underlyingToken;
     }
 
-    /// @inheritdoc IERC20Metadata
+    /**
+     * @dev See {ERC20-decimals}.
+     */
     function decimals() public view virtual override returns (uint8) {
         ERC20WrapperStorage storage $ = _getERC20WrapperStorage();
         try IERC20Metadata(address($._underlying)).decimals() returns (uint8 value) {
@@ -102,8 +99,8 @@ abstract contract ERC20WrapperUpgradeable is Initializable, ERC20Upgradeable {
     }
 
     /**
-     * @dev Mint wrapped token to cover any underlyingTokens that would have been transferred by mistake or acquired from
-     * rebasing mechanisms. Internal function that can be exposed with access control if desired.
+     * @dev Mint wrapped token to cover any underlyingTokens that would have been transferred by mistake. Internal
+     * function that can be exposed with access control if desired.
      */
     function _recover(address account) internal virtual returns (uint256) {
         ERC20WrapperStorage storage $ = _getERC20WrapperStorage();

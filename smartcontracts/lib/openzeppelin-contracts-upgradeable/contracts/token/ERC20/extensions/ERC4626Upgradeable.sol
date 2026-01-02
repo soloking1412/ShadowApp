@@ -1,25 +1,23 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Contracts (last updated v5.5.0) (token/ERC20/extensions/ERC4626.sol)
+// OpenZeppelin Contracts (last updated v5.0.0) (token/ERC20/extensions/ERC4626.sol)
 
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.20;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {ERC20Upgradeable} from "../ERC20Upgradeable.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
-import {LowLevelCall} from "@openzeppelin/contracts/utils/LowLevelCall.sol";
-import {Memory} from "@openzeppelin/contracts/utils/Memory.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
-import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
+import {Initializable} from "../../../proxy/utils/Initializable.sol";
 
 /**
- * @dev Implementation of the ERC-4626 "Tokenized Vault Standard" as defined in
- * https://eips.ethereum.org/EIPS/eip-4626[ERC-4626].
+ * @dev Implementation of the ERC4626 "Tokenized Vault Standard" as defined in
+ * https://eips.ethereum.org/EIPS/eip-4626[EIP-4626].
  *
- * This extension allows the minting and burning of "shares" (represented using the ERC-20 inheritance) in exchange for
+ * This extension allows the minting and burning of "shares" (represented using the ERC20 inheritance) in exchange for
  * underlying "assets" through standardized {deposit}, {mint}, {redeem} and {burn} workflows. This contract extends
- * the ERC-20 standard. Any additional extensions included along it would affect the "shares" token represented by this
+ * the ERC20 standard. Any additional extensions included along it would affect the "shares" token represented by this
  * contract and not the "assets" token which is an independent contract.
  *
  * [CAUTION]
@@ -32,14 +30,14 @@ import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.s
  * verifying the amount received is as expected, using a wrapper that performs these checks such as
  * https://github.com/fei-protocol/ERC4626#erc4626router-and-base[ERC4626Router].
  *
- * Since v4.9, this implementation introduces configurable virtual assets and shares to help developers mitigate that risk.
- * The `_decimalsOffset()` corresponds to an offset in the decimal representation between the underlying asset's decimals
- * and the vault decimals. This offset also determines the rate of virtual shares to virtual assets in the vault, which
- * itself determines the initial exchange rate. While not fully preventing the attack, analysis shows that the default
- * offset (0) makes it non-profitable even if an attacker is able to capture value from multiple user deposits, as a result
- * of the value being captured by the virtual shares (out of the attacker's donation) matching the attacker's expected gains.
- * With a larger offset, the attack becomes orders of magnitude more expensive than it is profitable. More details about the
- * underlying math can be found xref:ROOT:erc4626.adoc#inflation-attack[here].
+ * Since v4.9, this implementation uses virtual assets and shares to mitigate that risk. The `_decimalsOffset()`
+ * corresponds to an offset in the decimal representation between the underlying asset's decimals and the vault
+ * decimals. This offset also determines the rate of virtual shares to virtual assets in the vault, which itself
+ * determines the initial exchange rate. While not fully preventing the attack, analysis shows that the default offset
+ * (0) makes it non-profitable, as a result of the value being captured by the virtual shares (out of the attacker's
+ * donation) matching the attacker's expected gains. With a larger offset, the attack becomes orders of magnitude more
+ * expensive than it is profitable. More details about the underlying math can be found
+ * xref:erc4626.adoc#inflation-attack[here].
  *
  * The drawback of this approach is that the virtual shares do capture (a very small) part of the value being accrued
  * to the vault. Also, if the vault experiences losses, the users try to exit the vault, the virtual shares and assets
@@ -48,26 +46,6 @@ import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.s
  * `_convertToShares` and `_convertToAssets` functions.
  *
  * To learn more, check out our xref:ROOT:erc4626.adoc[ERC-4626 guide].
- * ====
- *
- * [NOTE]
- * ====
- * When overriding this contract, some elements must be considered:
- *
- * * When overriding the behavior of the deposit or withdraw mechanisms, it is recommended to override the internal
- * functions. Overriding {_deposit} automatically affects both {deposit} and {mint}. Similarly, overriding {_withdraw}
- * automatically affects both {withdraw} and {redeem}. Overall it is not recommended to override the public facing
- * functions since that could lead to inconsistent behaviors between the {deposit} and {mint} or between {withdraw} and
- * {redeem}, which is documented to have lead to loss of funds.
- *
- * * Overrides to the deposit or withdraw mechanism must be reflected in the preview functions as well.
- *
- * * {maxWithdraw} depends on {maxRedeem}. Therefore, overriding {maxRedeem} only is enough. On the other hand,
- * overriding {maxWithdraw} only would have no effect on {maxRedeem}, and could create an inconsistency between the two
- * functions.
- *
- * * If {previewRedeem} is overridden to revert, {maxWithdraw} must be overridden as necessary to ensure it
- * always return successfully.
  * ====
  */
 abstract contract ERC4626Upgradeable is Initializable, ERC20Upgradeable, IERC4626 {
@@ -109,7 +87,7 @@ abstract contract ERC4626Upgradeable is Initializable, ERC20Upgradeable, IERC462
     error ERC4626ExceededMaxRedeem(address owner, uint256 shares, uint256 max);
 
     /**
-     * @dev Set the underlying asset contract. This must be an ERC20-compatible contract (ERC-20 or ERC-777).
+     * @dev Set the underlying asset contract. This must be an ERC20-compatible contract (ERC20 or ERC777).
      */
     function __ERC4626_init(IERC20 asset_) internal onlyInitializing {
         __ERC4626_init_unchained(asset_);
@@ -125,18 +103,17 @@ abstract contract ERC4626Upgradeable is Initializable, ERC20Upgradeable, IERC462
     /**
      * @dev Attempts to fetch the asset decimals. A return value of false indicates that the attempt failed in some way.
      */
-    function _tryGetAssetDecimals(IERC20 asset_) private view returns (bool ok, uint8 assetDecimals) {
-        Memory.Pointer ptr = Memory.getFreeMemoryPointer();
-        (bool success, bytes32 returnedDecimals, ) = LowLevelCall.staticcallReturn64Bytes(
-            address(asset_),
+    function _tryGetAssetDecimals(IERC20 asset_) private view returns (bool, uint8) {
+        (bool success, bytes memory encodedDecimals) = address(asset_).staticcall(
             abi.encodeCall(IERC20Metadata.decimals, ())
         );
-        Memory.setFreeMemoryPointer(ptr);
-
-        return
-            (success && LowLevelCall.returnDataSize() >= 32 && uint256(returnedDecimals) <= type(uint8).max)
-                ? (true, uint8(uint256(returnedDecimals)))
-                : (false, 0);
+        if (success && encodedDecimals.length >= 32) {
+            uint256 returnedDecimals = abi.decode(encodedDecimals, (uint256));
+            if (returnedDecimals <= type(uint8).max) {
+                return (true, uint8(returnedDecimals));
+            }
+        }
+        return (false, 0);
     }
 
     /**
@@ -151,68 +128,69 @@ abstract contract ERC4626Upgradeable is Initializable, ERC20Upgradeable, IERC462
         return $._underlyingDecimals + _decimalsOffset();
     }
 
-    /// @inheritdoc IERC4626
+    /** @dev See {IERC4626-asset}. */
     function asset() public view virtual returns (address) {
         ERC4626Storage storage $ = _getERC4626Storage();
         return address($._asset);
     }
 
-    /// @inheritdoc IERC4626
+    /** @dev See {IERC4626-totalAssets}. */
     function totalAssets() public view virtual returns (uint256) {
-        return IERC20(asset()).balanceOf(address(this));
+        ERC4626Storage storage $ = _getERC4626Storage();
+        return $._asset.balanceOf(address(this));
     }
 
-    /// @inheritdoc IERC4626
+    /** @dev See {IERC4626-convertToShares}. */
     function convertToShares(uint256 assets) public view virtual returns (uint256) {
         return _convertToShares(assets, Math.Rounding.Floor);
     }
 
-    /// @inheritdoc IERC4626
+    /** @dev See {IERC4626-convertToAssets}. */
     function convertToAssets(uint256 shares) public view virtual returns (uint256) {
         return _convertToAssets(shares, Math.Rounding.Floor);
     }
 
-    /// @inheritdoc IERC4626
+    /** @dev See {IERC4626-maxDeposit}. */
     function maxDeposit(address) public view virtual returns (uint256) {
         return type(uint256).max;
     }
 
-    /// @inheritdoc IERC4626
+    /** @dev See {IERC4626-maxMint}. */
     function maxMint(address) public view virtual returns (uint256) {
         return type(uint256).max;
     }
 
-    /// @inheritdoc IERC4626
+    /** @dev See {IERC4626-maxWithdraw}. */
     function maxWithdraw(address owner) public view virtual returns (uint256) {
-        return previewRedeem(maxRedeem(owner));
+        return _convertToAssets(balanceOf(owner), Math.Rounding.Floor);
     }
 
-    /// @inheritdoc IERC4626
+    /** @dev See {IERC4626-maxRedeem}. */
     function maxRedeem(address owner) public view virtual returns (uint256) {
         return balanceOf(owner);
     }
 
-    /// @inheritdoc IERC4626
+    /** @dev See {IERC4626-previewDeposit}. */
     function previewDeposit(uint256 assets) public view virtual returns (uint256) {
         return _convertToShares(assets, Math.Rounding.Floor);
     }
 
-    /// @inheritdoc IERC4626
+    /** @dev See {IERC4626-previewMint}. */
     function previewMint(uint256 shares) public view virtual returns (uint256) {
         return _convertToAssets(shares, Math.Rounding.Ceil);
     }
 
-    /// @inheritdoc IERC4626
+    /** @dev See {IERC4626-previewWithdraw}. */
     function previewWithdraw(uint256 assets) public view virtual returns (uint256) {
         return _convertToShares(assets, Math.Rounding.Ceil);
     }
 
-    /// @inheritdoc IERC4626
+    /** @dev See {IERC4626-previewRedeem}. */
     function previewRedeem(uint256 shares) public view virtual returns (uint256) {
         return _convertToAssets(shares, Math.Rounding.Floor);
     }
 
-    /// @inheritdoc IERC4626
+    /** @dev See {IERC4626-deposit}. */
     function deposit(uint256 assets, address receiver) public virtual returns (uint256) {
         uint256 maxAssets = maxDeposit(receiver);
         if (assets > maxAssets) {
@@ -225,7 +203,11 @@ abstract contract ERC4626Upgradeable is Initializable, ERC20Upgradeable, IERC462
         return shares;
     }
 
-    /// @inheritdoc IERC4626
+    /** @dev See {IERC4626-mint}.
+     *
+     * As opposed to {deposit}, minting is allowed even if the vault is in a state where the price of a share is zero.
+     * In this case, the shares will be minted without requiring any assets to be deposited.
+     */
     function mint(uint256 shares, address receiver) public virtual returns (uint256) {
         uint256 maxShares = maxMint(receiver);
         if (shares > maxShares) {
@@ -238,7 +220,7 @@ abstract contract ERC4626Upgradeable is Initializable, ERC20Upgradeable, IERC462
         return assets;
     }
 
-    /// @inheritdoc IERC4626
+    /** @dev See {IERC4626-withdraw}. */
     function withdraw(uint256 assets, address receiver, address owner) public virtual returns (uint256) {
         uint256 maxAssets = maxWithdraw(owner);
         if (assets > maxAssets) {
@@ -251,7 +233,7 @@ abstract contract ERC4626Upgradeable is Initializable, ERC20Upgradeable, IERC462
         return shares;
     }
 
-    /// @inheritdoc IERC4626
+    /** @dev See {IERC4626-redeem}. */
     function redeem(uint256 shares, address receiver, address owner) public virtual returns (uint256) {
         uint256 maxShares = maxRedeem(owner);
         if (shares > maxShares) {
@@ -282,14 +264,15 @@ abstract contract ERC4626Upgradeable is Initializable, ERC20Upgradeable, IERC462
      * @dev Deposit/mint common workflow.
      */
     function _deposit(address caller, address receiver, uint256 assets, uint256 shares) internal virtual {
-        // If asset() is ERC-777, `transferFrom` can trigger a reentrancy BEFORE the transfer happens through the
+        ERC4626Storage storage $ = _getERC4626Storage();
+        // If _asset is ERC777, `transferFrom` can trigger a reentrancy BEFORE the transfer happens through the
         // `tokensToSend` hook. On the other hand, the `tokenReceived` hook, that is triggered after the transfer,
         // calls the vault, which is assumed not malicious.
         //
         // Conclusion: we need to do the transfer before we mint so that any reentrancy would happen before the
         // assets are transferred and before the shares are minted, which is a valid state.
         // slither-disable-next-line reentrancy-no-eth
-        _transferIn(caller, assets);
+        SafeERC20.safeTransferFrom($._asset, caller, address(this), assets);
         _mint(receiver, shares);
 
         emit Deposit(caller, receiver, assets, shares);
@@ -305,30 +288,21 @@ abstract contract ERC4626Upgradeable is Initializable, ERC20Upgradeable, IERC462
         uint256 assets,
         uint256 shares
     ) internal virtual {
+        ERC4626Storage storage $ = _getERC4626Storage();
         if (caller != owner) {
             _spendAllowance(owner, caller, shares);
         }
 
-        // If asset() is ERC-777, `transfer` can trigger a reentrancy AFTER the transfer happens through the
+        // If _asset is ERC777, `transfer` can trigger a reentrancy AFTER the transfer happens through the
         // `tokensReceived` hook. On the other hand, the `tokensToSend` hook, that is triggered before the transfer,
         // calls the vault, which is assumed not malicious.
         //
         // Conclusion: we need to do the transfer after the burn so that any reentrancy would happen after the
         // shares are burned and after the assets are transferred, which is a valid state.
         _burn(owner, shares);
-        _transferOut(receiver, assets);
+        SafeERC20.safeTransfer($._asset, receiver, assets);
 
         emit Withdraw(caller, receiver, owner, assets, shares);
-    }
-
-    /// @dev Performs a transfer in of underlying assets. The default implementation uses `SafeERC20`. Used by {_deposit}.
-    function _transferIn(address from, uint256 assets) internal virtual {
-        SafeERC20.safeTransferFrom(IERC20(asset()), from, address(this), assets);
-    }
-
-    /// @dev Performs a transfer out of underlying assets. The default implementation uses `SafeERC20`. Used by {_withdraw}.
-    function _transferOut(address to, uint256 assets) internal virtual {
-        SafeERC20.safeTransfer(IERC20(asset()), to, assets);
     }
 
     function _decimalsOffset() internal view virtual returns (uint8) {

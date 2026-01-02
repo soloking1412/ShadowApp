@@ -1,163 +1,209 @@
-const { ethers } = require('hardhat');
+/* eslint-disable */
+
+const { BN, constants, expectEvent, expectRevert } = require('@openzeppelin/test-helpers');
 const { expect } = require('chai');
-const { loadFixture } = require('@nomicfoundation/hardhat-network-helpers');
+const { expectRevertCustomError } = require('../../../helpers/customError');
+const { MAX_UINT256, ZERO_ADDRESS } = constants;
 
-const name = 'My Token';
-const symbol = 'MTKN';
-const initialSupply = 100n;
-const loanValue = 10_000_000_000_000n;
+const ERC20FlashMintMock = artifacts.require('$ERC20FlashMintMock');
+const ERC3156FlashBorrowerMock = artifacts.require('ERC3156FlashBorrowerMock');
 
-async function fixture() {
-  const [holder, other] = await ethers.getSigners();
+contract('ERC20FlashMint', function (accounts) {
+  const [initialHolder, other, anotherAccount] = accounts;
 
-  const token = await ethers.deployContract('$ERC20FlashMintMock', [name, symbol]);
-  await token.$_mint(holder, initialSupply);
+  const name = 'My Token';
+  const symbol = 'MTKN';
 
-  return { holder, other, token };
-}
+  const initialSupply = new BN(100);
+  const loanValue = new BN(10000000000000);
 
-describe('ERC20FlashMint', function () {
   beforeEach(async function () {
-    Object.assign(this, await loadFixture(fixture));
+    this.token = await ERC20FlashMintMock.new(name, symbol);
+    await this.token.$_mint(initialHolder, initialSupply);
   });
 
   describe('maxFlashLoan', function () {
     it('token match', async function () {
-      expect(await this.token.maxFlashLoan(this.token)).to.equal(ethers.MaxUint256 - initialSupply);
+      expect(await this.token.maxFlashLoan(this.token.address)).to.be.bignumber.equal(MAX_UINT256.sub(initialSupply));
     });
 
     it('token mismatch', async function () {
-      expect(await this.token.maxFlashLoan(ethers.ZeroAddress)).to.equal(0n);
+      expect(await this.token.maxFlashLoan(ZERO_ADDRESS)).to.be.bignumber.equal('0');
     });
   });
 
   describe('flashFee', function () {
     it('token match', async function () {
-      expect(await this.token.flashFee(this.token, loanValue)).to.equal(0n);
+      expect(await this.token.flashFee(this.token.address, loanValue)).to.be.bignumber.equal('0');
     });
 
     it('token mismatch', async function () {
-      await expect(this.token.flashFee(ethers.ZeroAddress, loanValue))
-        .to.be.revertedWithCustomError(this.token, 'ERC3156UnsupportedToken')
-        .withArgs(ethers.ZeroAddress);
+      await expectRevertCustomError(this.token.flashFee(ZERO_ADDRESS, loanValue), 'ERC3156UnsupportedToken', [
+        ZERO_ADDRESS,
+      ]);
     });
   });
 
   describe('flashFeeReceiver', function () {
     it('default receiver', async function () {
-      expect(await this.token.$_flashFeeReceiver()).to.equal(ethers.ZeroAddress);
+      expect(await this.token.$_flashFeeReceiver()).to.be.eq(ZERO_ADDRESS);
     });
   });
 
   describe('flashLoan', function () {
     it('success', async function () {
-      const receiver = await ethers.deployContract('ERC3156FlashBorrowerMock', [true, true]);
+      const receiver = await ERC3156FlashBorrowerMock.new(true, true);
+      const { tx } = await this.token.flashLoan(receiver.address, this.token.address, loanValue, '0x');
 
-      const tx = await this.token.flashLoan(receiver, this.token, loanValue, '0x');
-      await expect(tx)
-        .to.emit(this.token, 'Transfer')
-        .withArgs(ethers.ZeroAddress, receiver, loanValue)
-        .to.emit(this.token, 'Transfer')
-        .withArgs(receiver, ethers.ZeroAddress, loanValue)
-        .to.emit(receiver, 'BalanceOf')
-        .withArgs(this.token, receiver, loanValue)
-        .to.emit(receiver, 'TotalSupply')
-        .withArgs(this.token, initialSupply + loanValue);
-      await expect(tx).to.changeTokenBalance(this.token, receiver, 0);
+      await expectEvent.inTransaction(tx, this.token, 'Transfer', {
+        from: ZERO_ADDRESS,
+        to: receiver.address,
+        value: loanValue,
+      });
+      await expectEvent.inTransaction(tx, this.token, 'Transfer', {
+        from: receiver.address,
+        to: ZERO_ADDRESS,
+        value: loanValue,
+      });
+      await expectEvent.inTransaction(tx, receiver, 'BalanceOf', {
+        token: this.token.address,
+        account: receiver.address,
+        value: loanValue,
+      });
+      await expectEvent.inTransaction(tx, receiver, 'TotalSupply', {
+        token: this.token.address,
+        value: initialSupply.add(loanValue),
+      });
 
-      expect(await this.token.totalSupply()).to.equal(initialSupply);
-      expect(await this.token.allowance(receiver, this.token)).to.equal(0n);
+      expect(await this.token.totalSupply()).to.be.bignumber.equal(initialSupply);
+      expect(await this.token.balanceOf(receiver.address)).to.be.bignumber.equal('0');
+      expect(await this.token.allowance(receiver.address, this.token.address)).to.be.bignumber.equal('0');
     });
 
     it('missing return value', async function () {
-      const receiver = await ethers.deployContract('ERC3156FlashBorrowerMock', [false, true]);
-      await expect(this.token.flashLoan(receiver, this.token, loanValue, '0x'))
-        .to.be.revertedWithCustomError(this.token, 'ERC3156InvalidReceiver')
-        .withArgs(receiver);
+      const receiver = await ERC3156FlashBorrowerMock.new(false, true);
+      await expectRevertCustomError(
+        this.token.flashLoan(receiver.address, this.token.address, loanValue, '0x'),
+        'ERC3156InvalidReceiver',
+        [receiver.address],
+      );
     });
 
     it('missing approval', async function () {
-      const receiver = await ethers.deployContract('ERC3156FlashBorrowerMock', [true, false]);
-      await expect(this.token.flashLoan(receiver, this.token, loanValue, '0x'))
-        .to.be.revertedWithCustomError(this.token, 'ERC20InsufficientAllowance')
-        .withArgs(this.token, 0, loanValue);
+      const receiver = await ERC3156FlashBorrowerMock.new(true, false);
+      await expectRevertCustomError(
+        this.token.flashLoan(receiver.address, this.token.address, loanValue, '0x'),
+        'ERC20InsufficientAllowance',
+        [this.token.address, 0, loanValue],
+      );
     });
 
     it('unavailable funds', async function () {
-      const receiver = await ethers.deployContract('ERC3156FlashBorrowerMock', [true, true]);
-      const data = this.token.interface.encodeFunctionData('transfer', [this.other.address, 10]);
-      await expect(this.token.flashLoan(receiver, this.token, loanValue, data))
-        .to.be.revertedWithCustomError(this.token, 'ERC20InsufficientBalance')
-        .withArgs(receiver, loanValue - 10n, loanValue);
+      const receiver = await ERC3156FlashBorrowerMock.new(true, true);
+      const data = this.token.contract.methods.transfer(other, 10).encodeABI();
+      await expectRevertCustomError(
+        this.token.flashLoan(receiver.address, this.token.address, loanValue, data),
+        'ERC20InsufficientBalance',
+        [receiver.address, loanValue - 10, loanValue],
+      );
     });
 
     it('more than maxFlashLoan', async function () {
-      const receiver = await ethers.deployContract('ERC3156FlashBorrowerMock', [true, true]);
-      const data = this.token.interface.encodeFunctionData('transfer', [this.other.address, 10]);
-      await expect(this.token.flashLoan(receiver, this.token, ethers.MaxUint256, data))
-        .to.be.revertedWithCustomError(this.token, 'ERC3156ExceededMaxLoan')
-        .withArgs(ethers.MaxUint256 - initialSupply);
+      const receiver = await ERC3156FlashBorrowerMock.new(true, true);
+      const data = this.token.contract.methods.transfer(other, 10).encodeABI();
+      // _mint overflow reverts using a panic code. No reason string.
+      await expectRevert.unspecified(this.token.flashLoan(receiver.address, this.token.address, MAX_UINT256, data));
     });
 
     describe('custom flash fee & custom fee receiver', function () {
-      const receiverInitialBalance = 200_000n;
-      const flashFee = 5_000n;
+      const receiverInitialBalance = new BN(200000);
+      const flashFee = new BN(5000);
 
       beforeEach('init receiver balance & set flash fee', async function () {
-        this.receiver = await ethers.deployContract('ERC3156FlashBorrowerMock', [true, true]);
-
-        const tx = await this.token.$_mint(this.receiver, receiverInitialBalance);
-        await expect(tx)
-          .to.emit(this.token, 'Transfer')
-          .withArgs(ethers.ZeroAddress, this.receiver, receiverInitialBalance);
-        await expect(tx).to.changeTokenBalance(this.token, this.receiver, receiverInitialBalance);
+        this.receiver = await ERC3156FlashBorrowerMock.new(true, true);
+        const receipt = await this.token.$_mint(this.receiver.address, receiverInitialBalance);
+        await expectEvent(receipt, 'Transfer', {
+          from: ZERO_ADDRESS,
+          to: this.receiver.address,
+          value: receiverInitialBalance,
+        });
+        expect(await this.token.balanceOf(this.receiver.address)).to.be.bignumber.equal(receiverInitialBalance);
 
         await this.token.setFlashFee(flashFee);
-        expect(await this.token.flashFee(this.token, loanValue)).to.equal(flashFee);
+        expect(await this.token.flashFee(this.token.address, loanValue)).to.be.bignumber.equal(flashFee);
       });
 
       it('default flash fee receiver', async function () {
-        const tx = await this.token.flashLoan(this.receiver, this.token, loanValue, '0x');
-        await expect(tx)
-          .to.emit(this.token, 'Transfer')
-          .withArgs(ethers.ZeroAddress, this.receiver, loanValue)
-          .to.emit(this.token, 'Transfer')
-          .withArgs(this.receiver, ethers.ZeroAddress, loanValue + flashFee)
-          .to.emit(this.receiver, 'BalanceOf')
-          .withArgs(this.token, this.receiver, receiverInitialBalance + loanValue)
-          .to.emit(this.receiver, 'TotalSupply')
-          .withArgs(this.token, initialSupply + receiverInitialBalance + loanValue);
-        await expect(tx).to.changeTokenBalances(this.token, [this.receiver, ethers.ZeroAddress], [-flashFee, 0]);
+        const { tx } = await this.token.flashLoan(this.receiver.address, this.token.address, loanValue, '0x');
+        await expectEvent.inTransaction(tx, this.token, 'Transfer', {
+          from: ZERO_ADDRESS,
+          to: this.receiver.address,
+          value: loanValue,
+        });
+        await expectEvent.inTransaction(tx, this.token, 'Transfer', {
+          from: this.receiver.address,
+          to: ZERO_ADDRESS,
+          value: loanValue.add(flashFee),
+        });
+        await expectEvent.inTransaction(tx, this.receiver, 'BalanceOf', {
+          token: this.token.address,
+          account: this.receiver.address,
+          value: receiverInitialBalance.add(loanValue),
+        });
+        await expectEvent.inTransaction(tx, this.receiver, 'TotalSupply', {
+          token: this.token.address,
+          value: initialSupply.add(receiverInitialBalance).add(loanValue),
+        });
 
-        expect(await this.token.totalSupply()).to.equal(initialSupply + receiverInitialBalance - flashFee);
-        expect(await this.token.allowance(this.receiver, this.token)).to.equal(0n);
+        expect(await this.token.totalSupply()).to.be.bignumber.equal(
+          initialSupply.add(receiverInitialBalance).sub(flashFee),
+        );
+        expect(await this.token.balanceOf(this.receiver.address)).to.be.bignumber.equal(
+          receiverInitialBalance.sub(flashFee),
+        );
+        expect(await this.token.balanceOf(await this.token.$_flashFeeReceiver())).to.be.bignumber.equal('0');
+        expect(await this.token.allowance(this.receiver.address, this.token.address)).to.be.bignumber.equal('0');
       });
 
       it('custom flash fee receiver', async function () {
-        const flashFeeReceiverAddress = this.other;
+        const flashFeeReceiverAddress = anotherAccount;
         await this.token.setFlashFeeReceiver(flashFeeReceiverAddress);
-        expect(await this.token.$_flashFeeReceiver()).to.equal(flashFeeReceiverAddress);
+        expect(await this.token.$_flashFeeReceiver()).to.be.eq(flashFeeReceiverAddress);
 
-        const tx = await this.token.flashLoan(this.receiver, this.token, loanValue, '0x');
-        await expect(tx)
-          .to.emit(this.token, 'Transfer')
-          .withArgs(ethers.ZeroAddress, this.receiver, loanValue)
-          .to.emit(this.token, 'Transfer')
-          .withArgs(this.receiver, ethers.ZeroAddress, loanValue)
-          .to.emit(this.token, 'Transfer')
-          .withArgs(this.receiver, flashFeeReceiverAddress, flashFee)
-          .to.emit(this.receiver, 'BalanceOf')
-          .withArgs(this.token, this.receiver, receiverInitialBalance + loanValue)
-          .to.emit(this.receiver, 'TotalSupply')
-          .withArgs(this.token, initialSupply + receiverInitialBalance + loanValue);
-        await expect(tx).to.changeTokenBalances(
-          this.token,
-          [this.receiver, flashFeeReceiverAddress],
-          [-flashFee, flashFee],
+        expect(await this.token.balanceOf(flashFeeReceiverAddress)).to.be.bignumber.equal('0');
+
+        const { tx } = await this.token.flashLoan(this.receiver.address, this.token.address, loanValue, '0x');
+        await expectEvent.inTransaction(tx, this.token, 'Transfer', {
+          from: ZERO_ADDRESS,
+          to: this.receiver.address,
+          value: loanValue,
+        });
+        await expectEvent.inTransaction(tx, this.token, 'Transfer', {
+          from: this.receiver.address,
+          to: ZERO_ADDRESS,
+          value: loanValue,
+        });
+        await expectEvent.inTransaction(tx, this.token, 'Transfer', {
+          from: this.receiver.address,
+          to: flashFeeReceiverAddress,
+          value: flashFee,
+        });
+        await expectEvent.inTransaction(tx, this.receiver, 'BalanceOf', {
+          token: this.token.address,
+          account: this.receiver.address,
+          value: receiverInitialBalance.add(loanValue),
+        });
+        await expectEvent.inTransaction(tx, this.receiver, 'TotalSupply', {
+          token: this.token.address,
+          value: initialSupply.add(receiverInitialBalance).add(loanValue),
+        });
+
+        expect(await this.token.totalSupply()).to.be.bignumber.equal(initialSupply.add(receiverInitialBalance));
+        expect(await this.token.balanceOf(this.receiver.address)).to.be.bignumber.equal(
+          receiverInitialBalance.sub(flashFee),
         );
-
-        expect(await this.token.totalSupply()).to.equal(initialSupply + receiverInitialBalance);
-        expect(await this.token.allowance(this.receiver, flashFeeReceiverAddress)).to.equal(0n);
+        expect(await this.token.balanceOf(flashFeeReceiverAddress)).to.be.bignumber.equal(flashFee);
+        expect(await this.token.allowance(this.receiver.address, flashFeeReceiverAddress)).to.be.bignumber.equal('0');
       });
     });
   });

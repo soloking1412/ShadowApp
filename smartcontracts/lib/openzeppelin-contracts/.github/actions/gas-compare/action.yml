@@ -1,19 +1,18 @@
 name: Compare gas costs
-description: Compare gas costs between branches
 inputs:
   token:
-    description: GitHub token, required to access GitHub API
+    description: github token
     required: true
   report:
-    description: Path to the report to compare
+    description: report to read from
     required: false
     default: gasReporterOutput.json
   out_report:
-    description: Path to save the output report
+    description: report to read
     required: false
     default: ${{ github.ref_name }}.gasreport.json
   ref_report:
-    description: Path to the reference report for comparison
+    description: report to read from
     required: false
     default: ${{ github.base_ref }}.gasreport.json
 
@@ -44,8 +43,7 @@ runs:
       shell: bash
     - name: Save report
       if: github.event_name != 'pull_request'
-      uses: actions/upload-artifact@v5
+      uses: actions/upload-artifact@v3
       with:
         name: gasreport
-        overwrite: true
         path: ${{ inputs.out_report }}

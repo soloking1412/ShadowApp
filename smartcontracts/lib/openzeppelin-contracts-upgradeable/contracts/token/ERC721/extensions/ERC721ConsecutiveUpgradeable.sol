@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Contracts (last updated v5.5.0) (token/ERC721/extensions/ERC721Consecutive.sol)
+// OpenZeppelin Contracts (last updated v5.0.0) (token/ERC721/extensions/ERC721Consecutive.sol)
 
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.20;
 
 import {ERC721Upgradeable} from "../ERC721Upgradeable.sol";
 import {IERC2309} from "@openzeppelin/contracts/interfaces/IERC2309.sol";
 import {BitMaps} from "@openzeppelin/contracts/utils/structs/BitMaps.sol";
 import {Checkpoints} from "@openzeppelin/contracts/utils/structs/Checkpoints.sol";
-import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
+import {Initializable} from "../../../proxy/utils/Initializable.sol";
 
 /**
- * @dev Implementation of the ERC-2309 "Consecutive Transfer Extension" as defined in
- * https://eips.ethereum.org/EIPS/eip-2309[ERC-2309].
+ * @dev Implementation of the ERC2309 "Consecutive Transfer Extension" as defined in
+ * https://eips.ethereum.org/EIPS/eip-2309[EIP-2309].
  *
  * This extension allows the minting of large batches of tokens, during contract construction only. For upgradeable
  * contracts this implies that batch minting is only available during proxy deployment, and not in subsequent upgrades.
@@ -21,7 +21,7 @@ import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.s
  * regained after construction. During construction, only batch minting is allowed.
  *
  * IMPORTANT: This extension does not call the {_update} function for tokens minted in batch. Any logic added to this
- * function through overrides will not be triggered when tokens are minted in batch. You may want to also override
+ * function through overrides will not be triggered when token are minted in batch. You may want to also override
  * {_increaseBalance} or {_mintConsecutive} to account for these mints.
  *
  * IMPORTANT: When overriding {_mintConsecutive}, be careful about call ordering. {ownerOf} may return invalid
@@ -50,7 +50,7 @@ abstract contract ERC721ConsecutiveUpgradeable is Initializable, IERC2309, ERC72
     /**
      * @dev Batch mint is restricted to the constructor.
      * Any batch mint not emitting the {IERC721-Transfer} event outside of the constructor
-     * is non ERC-721 compliant.
+     * is non-ERC721 compliant.
      */
     error ERC721ForbiddenBatchMint();
 
@@ -113,7 +113,7 @@ abstract contract ERC721ConsecutiveUpgradeable is Initializable, IERC2309, ERC72
      * - `batchSize` must not be greater than {_maxBatchSize}.
      * - The function is called in the constructor of the contract (directly or indirectly).
      *
-     * CAUTION: Does not emit a `Transfer` event. This is ERC-721 compliant as long as it is done inside of the
+     * CAUTION: Does not emit a `Transfer` event. This is ERC721 compliant as long as it is done inside of the
      * constructor, which is enforced by this function.
      *
      * CAUTION: Does not invoke `onERC721Received` on the receiver.
@@ -180,7 +180,7 @@ abstract contract ERC721ConsecutiveUpgradeable is Initializable, IERC2309, ERC72
     }
 
     /**
-     * @dev Used to offset the first token id in `_nextConsecutiveId`
+     * @dev Used to offset the first token id in {_nextConsecutiveId}
      */
     function _firstConsecutiveId() internal view virtual returns (uint96) {
         return 0;

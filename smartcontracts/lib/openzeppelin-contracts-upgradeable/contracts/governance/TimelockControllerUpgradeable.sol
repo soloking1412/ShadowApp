@@ -1,14 +1,13 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Contracts (last updated v5.5.0) (governance/TimelockController.sol)
+// OpenZeppelin Contracts (last updated v5.0.0) (governance/TimelockController.sol)
 
 pragma solidity ^0.8.20;
 
 import {AccessControlUpgradeable} from "../access/AccessControlUpgradeable.sol";
-import {ERC721Holder} from "@openzeppelin/contracts/token/ERC721/utils/ERC721Holder.sol";
-import {ERC1155Holder} from "@openzeppelin/contracts/token/ERC1155/utils/ERC1155Holder.sol";
+import {ERC721HolderUpgradeable} from "../token/ERC721/utils/ERC721HolderUpgradeable.sol";
+import {ERC1155HolderUpgradeable} from "../token/ERC1155/utils/ERC1155HolderUpgradeable.sol";
 import {Address} from "@openzeppelin/contracts/utils/Address.sol";
-import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
+import {Initializable} from "../proxy/utils/Initializable.sol";
 
 /**
  * @dev Contract module which acts as a timelocked controller. When set as the
@@ -23,11 +22,11 @@ import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.s
  * to position this {TimelockController} as the owner of a smart contract, with
  * a multisig or a DAO as the sole proposer.
  */
-contract TimelockControllerUpgradeable is Initializable, AccessControlUpgradeable, ERC721Holder, ERC1155Holder {
+contract TimelockControllerUpgradeable is Initializable, AccessControlUpgradeable, ERC721HolderUpgradeable, ERC1155HolderUpgradeable {
     bytes32 public constant PROPOSER_ROLE = keccak256("PROPOSER_ROLE");
     bytes32 public constant EXECUTOR_ROLE = keccak256("EXECUTOR_ROLE");
     bytes32 public constant CANCELLER_ROLE = keccak256("CANCELLER_ROLE");
-    uint256 internal constant DONE_TIMESTAMP = uint256(1);
+    uint256 internal constant _DONE_TIMESTAMP = uint256(1);
 
     /// @custom:storage-location erc7201:openzeppelin.storage.TimelockController
     struct TimelockControllerStorage {
@@ -113,9 +112,6 @@ contract TimelockControllerUpgradeable is Initializable, AccessControlUpgradeabl
      */
     event MinDelayChange(uint256 oldDuration, uint256 newDuration);
 
-    function initialize(uint256 minDelay, address[] memory proposers, address[] memory executors, address admin) public virtual initializer {
-        __TimelockController_init(minDelay, proposers, executors, admin);
-    }
     /**
      * @dev Initializes the contract with the following parameters:
      *
@@ -174,12 +170,14 @@ contract TimelockControllerUpgradeable is Initializable, AccessControlUpgradeabl
     /**
      * @dev Contract might receive/hold ETH as part of the maintenance process.
      */
-    receive() external payable virtual {}
+    receive() external payable {}
 
-    /// @inheritdoc IERC165
+    /**
+     * @dev See {IERC165-supportsInterface}.
+     */
     function supportsInterface(
         bytes4 interfaceId
-    ) public view virtual override(AccessControlUpgradeable, ERC1155Holder) returns (bool) {
+    ) public view virtual override(AccessControlUpgradeable, ERC1155HolderUpgradeable) returns (bool) {
         return super.supportsInterface(interfaceId);
     }
 
@@ -229,7 +227,7 @@ contract TimelockControllerUpgradeable is Initializable, AccessControlUpgradeabl
         uint256 timestamp = getTimestamp(id);
         if (timestamp == 0) {
             return OperationState.Unset;
-        } else if (timestamp == DONE_TIMESTAMP) {
+        } else if (timestamp == _DONE_TIMESTAMP) {
             return OperationState.Done;
         } else if (timestamp > block.timestamp) {
             return OperationState.Waiting;
@@ -368,7 +366,7 @@ contract TimelockControllerUpgradeable is Initializable, AccessControlUpgradeabl
     }
 
     /**
-     * @dev Execute a ready operation containing a single transaction.
+     * @dev Execute an (ready) operation containing a single transaction.
      *
      * Emits a {CallExecuted} event.
      *
@@ -395,7 +393,7 @@ contract TimelockControllerUpgradeable is Initializable, AccessControlUpgradeabl
     }
 
     /**
-     * @dev Execute a ready operation containing a batch of transactions.
+     * @dev Execute an (ready) operation containing a batch of transactions.
      *
      * Emits one {CallExecuted} event per transaction in the batch.
      *
@@ -458,7 +456,7 @@ contract TimelockControllerUpgradeable is Initializable, AccessControlUpgradeabl
         if (!isOperationReady(id)) {
             revert TimelockUnexpectedOperationState(id, _encodeStateBitmap(OperationState.Ready));
         }
-        $._timestamps[id] = DONE_TIMESTAMP;
+        $._timestamps[id] = _DONE_TIMESTAMP;
     }
 
     /**
@@ -471,7 +469,7 @@ contract TimelockControllerUpgradeable is Initializable, AccessControlUpgradeabl
      * - the caller must be the timelock itself. This can only be achieved by scheduling and later executing
      * an operation where the timelock is the target and the data is the ABI-encoded call to this function.
      */
-    function updateDelay(uint256 newDelay) public virtual {
+    function updateDelay(uint256 newDelay) external virtual {
         TimelockControllerStorage storage $ = _getTimelockControllerStorage();
         address sender = _msgSender();
         if (sender != address(this)) {

@@ -1,223 +1,262 @@
-const { ethers } = require('hardhat');
+const { BN, expectRevert, expectEvent, constants } = require('@openzeppelin/test-helpers');
+const { ZERO_ADDRESS } = constants;
+const { getAddressInSlot, ImplementationSlot, AdminSlot } = require('../../helpers/erc1967');
+const { expectRevertCustomError } = require('../../helpers/customError');
+
 const { expect } = require('chai');
-
+const { web3 } = require('hardhat');
+const { computeCreateAddress } = require('../../helpers/create');
 const { impersonate } = require('../../helpers/account');
-const { getAddressInSlot, ImplementationSlot, AdminSlot } = require('../../helpers/storage');
 
-// createProxy, initialOwner, accounts
-module.exports = function shouldBehaveLikeTransparentUpgradeableProxy() {
-  before(async function () {
-    const implementationV0 = await ethers.deployContract('DummyImplementation');
-    const implementationV1 = await ethers.deployContract('DummyImplementation');
+const Implementation1 = artifacts.require('Implementation1');
+const Implementation2 = artifacts.require('Implementation2');
+const Implementation3 = artifacts.require('Implementation3');
+const Implementation4 = artifacts.require('Implementation4');
+const MigratableMockV1 = artifacts.require('MigratableMockV1');
+const MigratableMockV2 = artifacts.require('MigratableMockV2');
+const MigratableMockV3 = artifacts.require('MigratableMockV3');
+const InitializableMock = artifacts.require('InitializableMock');
+const DummyImplementation = artifacts.require('DummyImplementation');
+const ClashingImplementation = artifacts.require('ClashingImplementation');
+const Ownable = artifacts.require('Ownable');
 
-    const createProxyWithImpersonatedProxyAdmin = async (logic, initData, opts = undefined) => {
-      const [proxy, tx] = await this.createProxy(logic, initData, opts).then(instance =>
-        Promise.all([ethers.getContractAt('ITransparentUpgradeableProxy', instance), instance.deploymentTransaction()]),
-      );
+module.exports = function shouldBehaveLikeTransparentUpgradeableProxy(createProxy, initialOwner, accounts) {
+  const [anotherAccount] = accounts;
 
-      const proxyAdmin = await ethers.getContractAt(
-        'ProxyAdmin',
-        ethers.getCreateAddress({ from: proxy.target, nonce: 1n }),
-      );
-      const proxyAdminAsSigner = await proxyAdmin.getAddress().then(impersonate);
+  async function createProxyWithImpersonatedProxyAdmin(logic, initData, opts = undefined) {
+    const proxy = await createProxy(logic, initData, opts);
 
-      return {
-        instance: logic.attach(proxy.target), // attaching proxy directly works well for everything except for event resolution
-        proxy,
-        proxyAdmin,
-        proxyAdminAsSigner,
-        tx,
-      };
+    // Expect proxy admin to be the first and only contract created by the proxy
+    const proxyAdminAddress = computeCreateAddress(proxy.address, 1);
+    await impersonate(proxyAdminAddress);
+
+    return {
+      proxy,
+      proxyAdminAddress,
     };
+  }
 
-    Object.assign(this, {
-      implementationV0,
-      implementationV1,
-      createProxyWithImpersonatedProxyAdmin,
-    });
+  before(async function () {
+    this.implementationV0 = (await DummyImplementation.new()).address;
+    this.implementationV1 = (await DummyImplementation.new()).address;
   });
 
   beforeEach(async function () {
-    Object.assign(this, await this.createProxyWithImpersonatedProxyAdmin(this.implementationV0, '0x'));
+    const initializeData = Buffer.from('');
+    const { proxy, proxyAdminAddress } = await createProxyWithImpersonatedProxyAdmin(
+      this.implementationV0,
+      initializeData,
+    );
+    this.proxy = proxy;
+    this.proxyAdminAddress = proxyAdminAddress;
   });
 
   describe('implementation', function () {
     it('returns the current implementation address', async function () {
-      expect(await getAddressInSlot(this.proxy, ImplementationSlot)).to.equal(this.implementationV0);
+      const implementationAddress = await getAddressInSlot(this.proxy, ImplementationSlot);
+      expect(implementationAddress).to.be.equal(this.implementationV0);
     });
 
     it('delegates to the implementation', async function () {
-      expect(await this.instance.get()).to.be.true;
+      const dummy = new DummyImplementation(this.proxy.address);
+      const value = await dummy.get();
+
+      expect(value).to.equal(true);
     });
   });
 
   describe('proxy admin', function () {
     it('emits AdminChanged event during construction', async function () {
-      await expect(this.tx).to.emit(this.proxy, 'AdminChanged').withArgs(ethers.ZeroAddress, this.proxyAdmin);
+      await expectEvent.inConstruction(this.proxy, 'AdminChanged', {
+        previousAdmin: ZERO_ADDRESS,
+        newAdmin: this.proxyAdminAddress,
+      });
     });
 
     it('sets the proxy admin in storage with the correct initial owner', async function () {
-      expect(await getAddressInSlot(this.proxy, AdminSlot)).to.equal(this.proxyAdmin);
-
-      expect(await this.proxyAdmin.owner()).to.equal(this.owner);
+      expect(await getAddressInSlot(this.proxy, AdminSlot)).to.be.equal(this.proxyAdminAddress);
+      const proxyAdmin = await Ownable.at(this.proxyAdminAddress);
+      expect(await proxyAdmin.owner()).to.be.equal(initialOwner);
     });
 
     it('can overwrite the admin by the implementation', async function () {
-      await this.instance.unsafeOverrideAdmin(this.other);
-
+      const dummy = new DummyImplementation(this.proxy.address);
+      await dummy.unsafeOverrideAdmin(anotherAccount);
       const ERC1967AdminSlotValue = await getAddressInSlot(this.proxy, AdminSlot);
-      expect(ERC1967AdminSlotValue).to.equal(this.other);
-      expect(ERC1967AdminSlotValue).to.not.equal(this.proxyAdmin);
+      expect(ERC1967AdminSlotValue).to.be.equal(anotherAccount);
 
       // Still allows previous admin to execute admin operations
-      await expect(this.proxy.connect(this.proxyAdminAsSigner).upgradeToAndCall(this.implementationV1, '0x'))
-        .to.emit(this.proxy, 'Upgraded')
-        .withArgs(this.implementationV1);
+      expect(ERC1967AdminSlotValue).to.not.equal(this.proxyAdminAddress);
+      expectEvent(
+        await this.proxy.upgradeToAndCall(this.implementationV1, '0x', { from: this.proxyAdminAddress }),
+        'Upgraded',
+        {
+          implementation: this.implementationV1,
+        },
+      );
     });
   });
 
   describe('upgradeToAndCall', function () {
     describe('without migrations', function () {
       beforeEach(async function () {
-        this.behavior = await ethers.deployContract('InitializableMock');
+        this.behavior = await InitializableMock.new();
       });
 
       describe('when the call does not fail', function () {
-        beforeEach(function () {
-          this.initializeData = this.behavior.interface.encodeFunctionData('initializeWithX', [42n]);
-        });
+        const initializeData = new InitializableMock('').contract.methods['initializeWithX(uint256)'](42).encodeABI();
 
         describe('when the sender is the admin', function () {
-          const value = 10n ** 5n;
+          const value = 1e5;
 
           beforeEach(async function () {
-            this.tx = await this.proxy
-              .connect(this.proxyAdminAsSigner)
-              .upgradeToAndCall(this.behavior, this.initializeData, {
-                value,
-              });
+            this.receipt = await this.proxy.upgradeToAndCall(this.behavior.address, initializeData, {
+              from: this.proxyAdminAddress,
+              value,
+            });
           });
 
           it('upgrades to the requested implementation', async function () {
-            expect(await getAddressInSlot(this.proxy, ImplementationSlot)).to.equal(this.behavior);
+            const implementationAddress = await getAddressInSlot(this.proxy, ImplementationSlot);
+            expect(implementationAddress).to.be.equal(this.behavior.address);
           });
 
-          it('emits an event', async function () {
-            await expect(this.tx).to.emit(this.proxy, 'Upgraded').withArgs(this.behavior);
+          it('emits an event', function () {
+            expectEvent(this.receipt, 'Upgraded', { implementation: this.behavior.address });
           });
 
           it('calls the initializer function', async function () {
-            expect(await this.behavior.attach(this.proxy).x()).to.equal(42n);
+            const migratable = new InitializableMock(this.proxy.address);
+            const x = await migratable.x();
+            expect(x).to.be.bignumber.equal('42');
           });
 
           it('sends given value to the proxy', async function () {
-            expect(await ethers.provider.getBalance(this.proxy)).to.equal(value);
+            const balance = await web3.eth.getBalance(this.proxy.address);
+            expect(balance.toString()).to.be.bignumber.equal(value.toString());
           });
 
           it('uses the storage of the proxy', async function () {
             // storage layout should look as follows:
             //  - 0: Initializable storage ++ initializerRan ++ onlyInitializingRan
             //  - 1: x
-            expect(await ethers.provider.getStorage(this.proxy, 1n)).to.equal(42n);
+            const storedValue = await web3.eth.getStorageAt(this.proxy.address, 1);
+            expect(parseInt(storedValue)).to.eq(42);
           });
         });
 
         describe('when the sender is not the admin', function () {
           it('reverts', async function () {
-            await expect(this.proxy.connect(this.other).upgradeToAndCall(this.behavior, this.initializeData)).to.be
-              .reverted;
+            await expectRevert.unspecified(
+              this.proxy.upgradeToAndCall(this.behavior.address, initializeData, { from: anotherAccount }),
+            );
           });
         });
       });
 
       describe('when the call does fail', function () {
-        beforeEach(function () {
-          this.initializeData = this.behavior.interface.encodeFunctionData('fail');
-        });
+        const initializeData = new InitializableMock('').contract.methods.fail().encodeABI();
 
         it('reverts', async function () {
-          await expect(this.proxy.connect(this.proxyAdminAsSigner).upgradeToAndCall(this.behavior, this.initializeData))
-            .to.be.reverted;
+          await expectRevert.unspecified(
+            this.proxy.upgradeToAndCall(this.behavior.address, initializeData, { from: this.proxyAdminAddress }),
+          );
         });
       });
     });
 
     describe('with migrations', function () {
       describe('when the sender is the admin', function () {
-        const value = 10n ** 5n;
+        const value = 1e5;
 
         describe('when upgrading to V1', function () {
-          beforeEach(async function () {
-            this.behaviorV1 = await ethers.deployContract('MigratableMockV1');
-            const v1MigrationData = this.behaviorV1.interface.encodeFunctionData('initialize', [42n]);
+          const v1MigrationData = new MigratableMockV1('').contract.methods.initialize(42).encodeABI();
 
-            this.balancePreviousV1 = await ethers.provider.getBalance(this.proxy);
-            this.tx = await this.proxy
-              .connect(this.proxyAdminAsSigner)
-              .upgradeToAndCall(this.behaviorV1, v1MigrationData, {
-                value,
-              });
+          beforeEach(async function () {
+            this.behaviorV1 = await MigratableMockV1.new();
+            this.balancePreviousV1 = new BN(await web3.eth.getBalance(this.proxy.address));
+            this.receipt = await this.proxy.upgradeToAndCall(this.behaviorV1.address, v1MigrationData, {
+              from: this.proxyAdminAddress,
+              value,
+            });
           });
 
           it('upgrades to the requested version and emits an event', async function () {
-            expect(await getAddressInSlot(this.proxy, ImplementationSlot)).to.equal(this.behaviorV1);
-
-            await expect(this.tx).to.emit(this.proxy, 'Upgraded').withArgs(this.behaviorV1);
+            const implementation = await getAddressInSlot(this.proxy, ImplementationSlot);
+            expect(implementation).to.be.equal(this.behaviorV1.address);
+            expectEvent(this.receipt, 'Upgraded', { implementation: this.behaviorV1.address });
           });
 
           it("calls the 'initialize' function and sends given value to the proxy", async function () {
-            expect(await this.behaviorV1.attach(this.proxy).x()).to.equal(42n);
-            expect(await ethers.provider.getBalance(this.proxy)).to.equal(this.balancePreviousV1 + value);
+            const migratable = new MigratableMockV1(this.proxy.address);
+
+            const x = await migratable.x();
+            expect(x).to.be.bignumber.equal('42');
+
+            const balance = await web3.eth.getBalance(this.proxy.address);
+            expect(new BN(balance)).to.be.bignumber.equal(this.balancePreviousV1.addn(value));
           });
 
           describe('when upgrading to V2', function () {
-            beforeEach(async function () {
-              this.behaviorV2 = await ethers.deployContract('MigratableMockV2');
-              const v2MigrationData = this.behaviorV2.interface.encodeFunctionData('migrate', [10n, 42n]);
+            const v2MigrationData = new MigratableMockV2('').contract.methods.migrate(10, 42).encodeABI();
 
-              this.balancePreviousV2 = await ethers.provider.getBalance(this.proxy);
-              this.tx = await this.proxy
-                .connect(this.proxyAdminAsSigner)
-                .upgradeToAndCall(this.behaviorV2, v2MigrationData, {
-                  value,
-                });
+            beforeEach(async function () {
+              this.behaviorV2 = await MigratableMockV2.new();
+              this.balancePreviousV2 = new BN(await web3.eth.getBalance(this.proxy.address));
+              this.receipt = await this.proxy.upgradeToAndCall(this.behaviorV2.address, v2MigrationData, {
+                from: this.proxyAdminAddress,
+                value,
+              });
             });
 
             it('upgrades to the requested version and emits an event', async function () {
-              expect(await getAddressInSlot(this.proxy, ImplementationSlot)).to.equal(this.behaviorV2);
-
-              await expect(this.tx).to.emit(this.proxy, 'Upgraded').withArgs(this.behaviorV2);
+              const implementation = await getAddressInSlot(this.proxy, ImplementationSlot);
+              expect(implementation).to.be.equal(this.behaviorV2.address);
+              expectEvent(this.receipt, 'Upgraded', { implementation: this.behaviorV2.address });
             });
 
             it("calls the 'migrate' function and sends given value to the proxy", async function () {
-              expect(await this.behaviorV2.attach(this.proxy).x()).to.equal(10n);
-              expect(await this.behaviorV2.attach(this.proxy).y()).to.equal(42n);
-              expect(await ethers.provider.getBalance(this.proxy)).to.equal(this.balancePreviousV2 + value);
+              const migratable = new MigratableMockV2(this.proxy.address);
+
+              const x = await migratable.x();
+              expect(x).to.be.bignumber.equal('10');
+
+              const y = await migratable.y();
+              expect(y).to.be.bignumber.equal('42');
+
+              const balance = new BN(await web3.eth.getBalance(this.proxy.address));
+              expect(balance).to.be.bignumber.equal(this.balancePreviousV2.addn(value));
             });
 
             describe('when upgrading to V3', function () {
-              beforeEach(async function () {
-                this.behaviorV3 = await ethers.deployContract('MigratableMockV3');
-                const v3MigrationData = this.behaviorV3.interface.encodeFunctionData('migrate()');
+              const v3MigrationData = new MigratableMockV3('').contract.methods['migrate()']().encodeABI();
 
-                this.balancePreviousV3 = await ethers.provider.getBalance(this.proxy);
-                this.tx = await this.proxy
-                  .connect(this.proxyAdminAsSigner)
-                  .upgradeToAndCall(this.behaviorV3, v3MigrationData, {
-                    value,
-                  });
+              beforeEach(async function () {
+                this.behaviorV3 = await MigratableMockV3.new();
+                this.balancePreviousV3 = new BN(await web3.eth.getBalance(this.proxy.address));
+                this.receipt = await this.proxy.upgradeToAndCall(this.behaviorV3.address, v3MigrationData, {
+                  from: this.proxyAdminAddress,
+                  value,
+                });
               });
 
               it('upgrades to the requested version and emits an event', async function () {
-                expect(await getAddressInSlot(this.proxy, ImplementationSlot)).to.equal(this.behaviorV3);
-
-                await expect(this.tx).to.emit(this.proxy, 'Upgraded').withArgs(this.behaviorV3);
+                const implementation = await getAddressInSlot(this.proxy, ImplementationSlot);
+                expect(implementation).to.be.equal(this.behaviorV3.address);
+                expectEvent(this.receipt, 'Upgraded', { implementation: this.behaviorV3.address });
               });
 
               it("calls the 'migrate' function and sends given value to the proxy", async function () {
-                expect(await this.behaviorV3.attach(this.proxy).x()).to.equal(42n);
-                expect(await this.behaviorV3.attach(this.proxy).y()).to.equal(10n);
-                expect(await ethers.provider.getBalance(this.proxy)).to.equal(this.balancePreviousV3 + value);
+                const migratable = new MigratableMockV3(this.proxy.address);
+
+                const x = await migratable.x();
+                expect(x).to.be.bignumber.equal('42');
+
+                const y = await migratable.y();
+                expect(y).to.be.bignumber.equal('10');
+
+                const balance = new BN(await web3.eth.getBalance(this.proxy.address));
+                expect(balance).to.be.bignumber.equal(this.balancePreviousV3.addn(value));
               });
             });
           });
@@ -225,10 +264,12 @@ module.exports = function shouldBehaveLikeTransparentUpgradeableProxy() {
       });
 
       describe('when the sender is not the admin', function () {
+        const from = anotherAccount;
+
         it('reverts', async function () {
-          const behaviorV1 = await ethers.deployContract('MigratableMockV1');
-          const v1MigrationData = behaviorV1.interface.encodeFunctionData('initialize', [42n]);
-          await expect(this.proxy.connect(this.other).upgradeToAndCall(behaviorV1, v1MigrationData)).to.be.reverted;
+          const behaviorV1 = await MigratableMockV1.new();
+          const v1MigrationData = new MigratableMockV1('').contract.methods.initialize(42).encodeABI();
+          await expectRevert.unspecified(this.proxy.upgradeToAndCall(behaviorV1.address, v1MigrationData, { from }));
         });
       });
     });
@@ -236,122 +277,137 @@ module.exports = function shouldBehaveLikeTransparentUpgradeableProxy() {
 
   describe('transparent proxy', function () {
     beforeEach('creating proxy', async function () {
-      this.clashingImplV0 = await ethers.deployContract('ClashingImplementation');
-      this.clashingImplV1 = await ethers.deployContract('ClashingImplementation');
-
-      Object.assign(this, await this.createProxyWithImpersonatedProxyAdmin(this.clashingImplV0, '0x'));
+      const initializeData = Buffer.from('');
+      this.clashingImplV0 = (await ClashingImplementation.new()).address;
+      this.clashingImplV1 = (await ClashingImplementation.new()).address;
+      const { proxy, proxyAdminAddress } = await createProxyWithImpersonatedProxyAdmin(
+        this.clashingImplV0,
+        initializeData,
+      );
+      this.proxy = proxy;
+      this.proxyAdminAddress = proxyAdminAddress;
+      this.clashing = new ClashingImplementation(this.proxy.address);
     });
 
     it('proxy admin cannot call delegated functions', async function () {
-      const factory = await ethers.getContractFactory('TransparentUpgradeableProxy');
-
-      await expect(this.instance.connect(this.proxyAdminAsSigner).delegatedFunction()).to.be.revertedWithCustomError(
-        factory,
+      await expectRevertCustomError(
+        this.clashing.delegatedFunction({ from: this.proxyAdminAddress }),
         'ProxyDeniedAdminAccess',
+        [],
       );
     });
 
     describe('when function names clash', function () {
       it('executes the proxy function if the sender is the admin', async function () {
-        await expect(this.proxy.connect(this.proxyAdminAsSigner).upgradeToAndCall(this.clashingImplV1, '0x'))
-          .to.emit(this.proxy, 'Upgraded')
-          .withArgs(this.clashingImplV1);
+        const receipt = await this.proxy.upgradeToAndCall(this.clashingImplV1, '0x', {
+          from: this.proxyAdminAddress,
+        });
+        expectEvent(receipt, 'Upgraded', { implementation: this.clashingImplV1 });
       });
 
       it('delegates the call to implementation when sender is not the admin', async function () {
-        await expect(this.proxy.connect(this.other).upgradeToAndCall(this.clashingImplV1, '0x'))
-          .to.emit(this.instance, 'ClashingImplementationCall')
-          .to.not.emit(this.proxy, 'Upgraded');
+        const receipt = await this.proxy.upgradeToAndCall(this.clashingImplV1, '0x', {
+          from: anotherAccount,
+        });
+        expectEvent.notEmitted(receipt, 'Upgraded');
+        expectEvent.inTransaction(receipt.tx, this.clashing, 'ClashingImplementationCall');
       });
     });
   });
 
-  describe('regression', function () {
-    const initializeData = '0x';
+  describe('regression', () => {
+    const initializeData = Buffer.from('');
 
-    it('should add new function', async function () {
-      const impl1 = await ethers.deployContract('Implementation1');
-      const impl2 = await ethers.deployContract('Implementation2');
-      const { instance, proxy, proxyAdminAsSigner } = await this.createProxyWithImpersonatedProxyAdmin(
-        impl1,
+    it('should add new function', async () => {
+      const instance1 = await Implementation1.new();
+      const { proxy, proxyAdminAddress } = await createProxyWithImpersonatedProxyAdmin(
+        instance1.address,
         initializeData,
       );
 
-      await instance.setValue(42n);
+      const proxyInstance1 = new Implementation1(proxy.address);
+      await proxyInstance1.setValue(42);
 
-      // `getValue` is not available in impl1
-      await expect(impl2.attach(instance).getValue()).to.be.reverted;
+      const instance2 = await Implementation2.new();
+      await proxy.upgradeToAndCall(instance2.address, '0x', { from: proxyAdminAddress });
 
-      // do upgrade
-      await proxy.connect(proxyAdminAsSigner).upgradeToAndCall(impl2, '0x');
-
-      // `getValue` is available in impl2
-      expect(await impl2.attach(instance).getValue()).to.equal(42n);
+      const proxyInstance2 = new Implementation2(proxy.address);
+      const res = await proxyInstance2.getValue();
+      expect(res.toString()).to.eq('42');
     });
 
-    it('should remove function', async function () {
-      const impl1 = await ethers.deployContract('Implementation1');
-      const impl2 = await ethers.deployContract('Implementation2');
-      const { instance, proxy, proxyAdminAsSigner } = await this.createProxyWithImpersonatedProxyAdmin(
-        impl2,
+    it('should remove function', async () => {
+      const instance2 = await Implementation2.new();
+      const { proxy, proxyAdminAddress } = await createProxyWithImpersonatedProxyAdmin(
+        instance2.address,
         initializeData,
       );
 
-      await instance.setValue(42n);
+      const proxyInstance2 = new Implementation2(proxy.address);
+      await proxyInstance2.setValue(42);
+      const res = await proxyInstance2.getValue();
+      expect(res.toString()).to.eq('42');
 
-      // `getValue` is available in impl2
-      expect(await impl2.attach(instance).getValue()).to.equal(42n);
+      const instance1 = await Implementation1.new();
+      await proxy.upgradeToAndCall(instance1.address, '0x', { from: proxyAdminAddress });
 
-      // do downgrade
-      await proxy.connect(proxyAdminAsSigner).upgradeToAndCall(impl1, '0x');
-
-      // `getValue` is not available in impl1
-      await expect(impl2.attach(instance).getValue()).to.be.reverted;
+      const proxyInstance1 = new Implementation2(proxy.address);
+      await expectRevert.unspecified(proxyInstance1.getValue());
     });
 
-    it('should change function signature', async function () {
-      const impl1 = await ethers.deployContract('Implementation1');
-      const impl3 = await ethers.deployContract('Implementation3');
-      const { instance, proxy, proxyAdminAsSigner } = await this.createProxyWithImpersonatedProxyAdmin(
-        impl1,
+    it('should change function signature', async () => {
+      const instance1 = await Implementation1.new();
+      const { proxy, proxyAdminAddress } = await createProxyWithImpersonatedProxyAdmin(
+        instance1.address,
         initializeData,
       );
 
-      await instance.setValue(42n);
+      const proxyInstance1 = new Implementation1(proxy.address);
+      await proxyInstance1.setValue(42);
 
-      await proxy.connect(proxyAdminAsSigner).upgradeToAndCall(impl3, '0x');
+      const instance3 = await Implementation3.new();
+      await proxy.upgradeToAndCall(instance3.address, '0x', { from: proxyAdminAddress });
+      const proxyInstance3 = new Implementation3(proxy.address);
 
-      expect(await impl3.attach(instance).getValue(8n)).to.equal(50n);
+      const res = await proxyInstance3.getValue(8);
+      expect(res.toString()).to.eq('50');
     });
 
-    it('should add fallback function', async function () {
-      const impl1 = await ethers.deployContract('Implementation1');
-      const impl4 = await ethers.deployContract('Implementation4');
-      const { instance, proxy, proxyAdminAsSigner } = await this.createProxyWithImpersonatedProxyAdmin(
-        impl1,
+    it('should add fallback function', async () => {
+      const initializeData = Buffer.from('');
+      const instance1 = await Implementation1.new();
+      const { proxy, proxyAdminAddress } = await createProxyWithImpersonatedProxyAdmin(
+        instance1.address,
         initializeData,
       );
 
-      await proxy.connect(proxyAdminAsSigner).upgradeToAndCall(impl4, '0x');
+      const instance4 = await Implementation4.new();
+      await proxy.upgradeToAndCall(instance4.address, '0x', { from: proxyAdminAddress });
+      const proxyInstance4 = new Implementation4(proxy.address);
 
-      await this.other.sendTransaction({ to: proxy });
+      const data = '0x';
+      await web3.eth.sendTransaction({ to: proxy.address, from: anotherAccount, data });
 
-      expect(await impl4.attach(instance).getValue()).to.equal(1n);
+      const res = await proxyInstance4.getValue();
+      expect(res.toString()).to.eq('1');
     });
 
-    it('should remove fallback function', async function () {
-      const impl2 = await ethers.deployContract('Implementation2');
-      const impl4 = await ethers.deployContract('Implementation4');
-      const { instance, proxy, proxyAdminAsSigner } = await this.createProxyWithImpersonatedProxyAdmin(
-        impl4,
+    it('should remove fallback function', async () => {
+      const instance4 = await Implementation4.new();
+      const { proxy, proxyAdminAddress } = await createProxyWithImpersonatedProxyAdmin(
+        instance4.address,
         initializeData,
       );
 
-      await proxy.connect(proxyAdminAsSigner).upgradeToAndCall(impl2, '0x');
+      const instance2 = await Implementation2.new();
+      await proxy.upgradeToAndCall(instance2.address, '0x', { from: proxyAdminAddress });
 
-      await expect(this.other.sendTransaction({ to: proxy })).to.be.reverted;
+      const data = '0x';
+      await expectRevert.unspecified(web3.eth.sendTransaction({ to: proxy.address, from: anotherAccount, data }));
 
-      expect(await impl2.attach(instance).getValue()).to.equal(0n);
+      const proxyInstance2 = new Implementation2(proxy.address);
+      const res = await proxyInstance2.getValue();
+      expect(res.toString()).to.eq('0');
     });
   });
 };

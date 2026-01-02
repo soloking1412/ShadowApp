@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Contracts (last updated v5.3.0) (utils/Pausable.sol)
+// OpenZeppelin Contracts (last updated v5.0.0) (utils/Pausable.sol)
 
 pragma solidity ^0.8.20;
 
 import {ContextUpgradeable} from "../utils/ContextUpgradeable.sol";
-import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
+import {Initializable} from "../proxy/utils/Initializable.sol";
 
 /**
  * @dev Contract module which allows children to implement an emergency stop
@@ -51,6 +51,18 @@ abstract contract PausableUpgradeable is Initializable, ContextUpgradeable {
     error ExpectedPause();
 
     /**
+     * @dev Initializes the contract in unpaused state.
+     */
+    function __Pausable_init() internal onlyInitializing {
+        __Pausable_init_unchained();
+    }
+
+    function __Pausable_init_unchained() internal onlyInitializing {
+        PausableStorage storage $ = _getPausableStorage();
+        $._paused = false;
+    }
+
+    /**
      * @dev Modifier to make a function callable only when the contract is not paused.
      *
      * Requirements:
@@ -74,11 +86,6 @@ abstract contract PausableUpgradeable is Initializable, ContextUpgradeable {
         _;
     }
 
-    function __Pausable_init() internal onlyInitializing {
-    }
-
-    function __Pausable_init_unchained() internal onlyInitializing {
-    }
     /**
      * @dev Returns true if the contract is paused, and false otherwise.
      */

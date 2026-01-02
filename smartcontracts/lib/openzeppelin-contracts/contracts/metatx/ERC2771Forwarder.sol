@@ -1,17 +1,16 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Contracts (last updated v5.5.0) (metatx/ERC2771Forwarder.sol)
+// OpenZeppelin Contracts (last updated v5.0.0) (metatx/ERC2771Forwarder.sol)
 
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.20;
 
 import {ERC2771Context} from "./ERC2771Context.sol";
 import {ECDSA} from "../utils/cryptography/ECDSA.sol";
 import {EIP712} from "../utils/cryptography/EIP712.sol";
 import {Nonces} from "../utils/Nonces.sol";
 import {Address} from "../utils/Address.sol";
-import {Errors} from "../utils/Errors.sol";
 
 /**
- * @dev A forwarder compatible with ERC-2771 contracts. See {ERC2771Context}.
+ * @dev A forwarder compatible with ERC2771 contracts. See {ERC2771Context}.
  *
  * This forwarder operates on forward requests that include:
  *
@@ -19,7 +18,7 @@ import {Errors} from "../utils/Errors.sol";
  * * `to`: The address that should be called.
  * * `value`: The amount of native token to attach with the requested call.
  * * `gas`: The amount of gas limit that will be forwarded with the requested call.
- * * `nonce` (implicit): Taken from {Nonces} for `from` and included in the signed typed data.
+ * * `nonce`: A unique transaction ordering identifier to avoid replayability and request invalidation.
  * * `deadline`: A timestamp after which the request is not executable anymore.
  * * `data`: Encoded `msg.data` to send with the requested call.
  *
@@ -61,7 +60,7 @@ contract ERC2771Forwarder is EIP712, Nonces {
         bytes signature;
     }
 
-    bytes32 internal constant FORWARD_REQUEST_TYPEHASH =
+    bytes32 internal constant _FORWARD_REQUEST_TYPEHASH =
         keccak256(
             "ForwardRequest(address from,address to,uint256 value,uint256 gas,uint256 nonce,uint48 deadline,bytes data)"
         );
@@ -133,7 +132,7 @@ contract ERC2771Forwarder is EIP712, Nonces {
         }
 
         if (!_execute(request, true)) {
-            revert Errors.FailedCall();
+            revert Address.FailedInnerCall();
         }
     }
 
@@ -195,7 +194,7 @@ contract ERC2771Forwarder is EIP712, Nonces {
 
     /**
      * @dev Validates if the provided request can be executed at current block timestamp with
-     * the given `request.signature` on behalf of `request.from`.
+     * the given `request.signature` on behalf of `request.signer`.
      */
     function _validate(
         ForwardRequestData calldata request
@@ -218,11 +217,11 @@ contract ERC2771Forwarder is EIP712, Nonces {
      */
     function _recoverForwardRequestSigner(
         ForwardRequestData calldata request
-    ) internal view virtual returns (bool isValid, address signer) {
+    ) internal view virtual returns (bool, address) {
         (address recovered, ECDSA.RecoverError err, ) = _hashTypedDataV4(
             keccak256(
                 abi.encode(
-                    FORWARD_REQUEST_TYPEHASH,
+                    _FORWARD_REQUEST_TYPEHASH,
                     request.from,
                     request.to,
                     request.value,
@@ -232,7 +231,7 @@ contract ERC2771Forwarder is EIP712, Nonces {
                     keccak256(request.data)
                 )
             )
-        ).tryRecoverCalldata(request.signature);
+        ).tryRecover(request.signature);
 
         return (err == ECDSA.RecoverError.NoError, recovered);
     }
@@ -286,8 +285,8 @@ contract ERC2771Forwarder is EIP712, Nonces {
 
             uint256 gasLeft;
 
-            assembly ("memory-safe") {
-                success := call(reqGas, to, value, add(data, 0x20), mload(data), 0x00, 0x00)
+            assembly {
+                success := call(reqGas, to, value, add(data, 0x20), mload(data), 0, 0)
                 gasLeft := gas()
             }
 
@@ -302,25 +301,23 @@ contract ERC2771Forwarder is EIP712, Nonces {
      *
      * This function performs a static call to the target contract calling the
      * {ERC2771Context-isTrustedForwarder} function.
-     *
-     * NOTE: Consider the execution of this forwarder is permissionless. Without this check, anyone may transfer assets
-     * that are owned by, or are approved to this forwarder.
      */
-    function _isTrustedByTarget(address target) internal view virtual returns (bool) {
+    function _isTrustedByTarget(address target) private view returns (bool) {
         bytes memory encodedParams = abi.encodeCall(ERC2771Context.isTrustedForwarder, (address(this)));
 
         bool success;
         uint256 returnSize;
         uint256 returnValue;
-        assembly ("memory-safe") {
-            // Perform the staticcall and save the result in the scratch space.
+        /// @solidity memory-safe-assembly
+        assembly {
+            // Perform the staticcal and save the result in the scratch space.
             // | Location  | Content  | Content (Hex)                                                      |
             // |-----------|----------|--------------------------------------------------------------------|
             // |           |          |                                                           result ↓ |
             // | 0x00:0x1F | selector | 0x0000000000000000000000000000000000000000000000000000000000000001 |
-            success := staticcall(gas(), target, add(encodedParams, 0x20), mload(encodedParams), 0x00, 0x20)
+            success := staticcall(gas(), target, add(encodedParams, 0x20), mload(encodedParams), 0, 0x20)
             returnSize := returndatasize()
-            returnValue := mload(0x00)
+            returnValue := mload(0)
         }
 
         return success && returnSize >= 0x20 && returnValue > 0;
@@ -349,7 +346,7 @@ contract ERC2771Forwarder is EIP712, Nonces {
         // We can't know X after CALL dynamic costs, but we want it to be such that X * 63 / 64 >= req.gas.
         // Let Y be the gas used in the subcall. gasleft() measured immediately after the subcall will be gasleft() = X - Y.
         // If the subcall ran out of gas, then Y = X * 63 / 64 and gasleft() = X - Y = X / 64.
-        // Under this assumption req.gas / 63 > gasleft() is true if and only if
+        // Under this assumption req.gas / 63 > gasleft() is true is true if and only if
         // req.gas / 63 > X / 64, or equivalently req.gas > X * 63 / 64.
         // This means that if the subcall runs out of gas we are able to detect that insufficient gas was passed.
         //
@@ -364,7 +361,8 @@ contract ERC2771Forwarder is EIP712, Nonces {
             // We explicitly trigger invalid opcode to consume all gas and bubble-up the effects, since
             // neither revert or assert consume all gas since Solidity 0.8.20
             // https://docs.soliditylang.org/en/v0.8.20/control-structures.html#panic-via-assert-and-error-via-require
-            assembly ("memory-safe") {
+            /// @solidity memory-safe-assembly
+            assembly {
                 invalid()
             }
         }

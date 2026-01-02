@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.20;
 
 import {GovernorUpgradeable} from "../../governance/GovernorUpgradeable.sol";
 import {GovernorCountingSimpleUpgradeable} from "../../governance/extensions/GovernorCountingSimpleUpgradeable.sol";
 import {GovernorVotesUpgradeable} from "../../governance/extensions/GovernorVotesUpgradeable.sol";
-import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
+import {Initializable} from "../../proxy/utils/Initializable.sol";
 
 abstract contract GovernorWithParamsMockUpgradeable is Initializable, GovernorVotesUpgradeable, GovernorCountingSimpleUpgradeable {
     event CountParams(uint256 uintParam, string strParam);
@@ -47,7 +47,7 @@ abstract contract GovernorWithParamsMockUpgradeable is Initializable, GovernorVo
         uint8 support,
         uint256 weight,
         bytes memory params
-    ) internal override(GovernorUpgradeable, GovernorCountingSimpleUpgradeable) returns (uint256) {
+    ) internal override(GovernorUpgradeable, GovernorCountingSimpleUpgradeable) {
         if (params.length > 0) {
             (uint256 _uintParam, string memory _strParam) = abi.decode(params, (uint256, string));
             emit CountParams(_uintParam, _strParam);

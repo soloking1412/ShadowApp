@@ -48,7 +48,7 @@ if [[ -v SUBMODULE_REMOTE ]]; then
   git add "$lib"
 fi
 
-git commit -m "Transpile $commit" --no-verify
+git commit -m "Transpile $commit"
 
 # return to original branch
 git checkout "$start_branch"

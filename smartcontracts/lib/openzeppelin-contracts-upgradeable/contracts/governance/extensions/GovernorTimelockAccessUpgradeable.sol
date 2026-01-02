@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Contracts (last updated v5.4.0) (governance/extensions/GovernorTimelockAccess.sol)
+// OpenZeppelin Contracts (last updated v5.0.0) (governance/extensions/GovernorTimelockAccess.sol)
 
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.20;
 
-import {IGovernor} from "@openzeppelin/contracts/governance/IGovernor.sol";
 import {GovernorUpgradeable} from "../GovernorUpgradeable.sol";
 import {AuthorityUtils} from "@openzeppelin/contracts/access/manager/AuthorityUtils.sol";
 import {IAccessManager} from "@openzeppelin/contracts/access/manager/IAccessManager.sol";
@@ -11,7 +10,7 @@ import {Address} from "@openzeppelin/contracts/utils/Address.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {Time} from "@openzeppelin/contracts/utils/types/Time.sol";
-import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
+import {Initializable} from "../../proxy/utils/Initializable.sol";
 
 /**
  * @dev This module connects a {Governor} instance to an {AccessManager} instance, allowing the governor to make calls
@@ -37,9 +36,6 @@ import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.s
  * mitigate this attack vector, the governor is able to ignore the restrictions claimed by the `AccessManager` using
  * {setAccessManagerIgnored}. While permanent denial of service is mitigated, temporary DoS may still be technically
  * possible. All of the governor's own functions (e.g., {setBaseDelaySeconds}) ignore the `AccessManager` by default.
- *
- * NOTE: `AccessManager` does not support scheduling more than one operation with the same target and calldata at
- * the same time. See {AccessManager-schedule} for a workaround.
  */
 abstract contract GovernorTimelockAccessUpgradeable is Initializable, GovernorUpgradeable {
     // An execution plan is produced at the moment a proposal is created, in order to fix at that point the exact
@@ -196,13 +192,17 @@ abstract contract GovernorTimelockAccessUpgradeable is Initializable, GovernorUp
         return (delay, indirect, withDelay);
     }
 
-    /// @inheritdoc IGovernor
+    /**
+     * @dev See {IGovernor-proposalNeedsQueuing}.
+     */
     function proposalNeedsQueuing(uint256 proposalId) public view virtual override returns (bool) {
         GovernorTimelockAccessStorage storage $ = _getGovernorTimelockAccessStorage();
         return $._executionPlan[proposalId].delay > 0;
     }
 
-    /// @inheritdoc IGovernor
+    /**
+     * @dev See {IGovernor-propose}
+     */
     function propose(
         address[] memory targets,
         uint256[] memory values,
@@ -261,9 +261,6 @@ abstract contract GovernorTimelockAccessUpgradeable is Initializable, GovernorUp
         for (uint256 i = 0; i < targets.length; ++i) {
             (, bool withDelay, ) = _getManagerData(plan, i);
             if (withDelay) {
-                // This function can reenter when calling `_manager.schedule` before performing state updates in `_setManagerData`.
-                // However, the `manager` is a trusted contract in the current context's security model (e.g. an `AccessManager`).
-                // slither-disable-next-line reentrancy-no-eth
                 (, uint32 nonce) = $._manager.schedule(targets[i], calldatas[i], etaSeconds);
                 _setManagerData(plan, i, true, nonce);
             }
@@ -304,7 +301,9 @@ abstract contract GovernorTimelockAccessUpgradeable is Initializable, GovernorUp
         }
     }
 
-    /// @inheritdoc GovernorUpgradeable
+    /**
+     * @dev See {IGovernor-_cancel}
+     */
     function _cancel(
         address[] memory targets,
         uint256[] memory values,

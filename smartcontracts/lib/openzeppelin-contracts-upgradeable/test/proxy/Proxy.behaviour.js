@@ -1,126 +1,71 @@
-const { ethers } = require('hardhat');
+const { expectRevert } = require('@openzeppelin/test-helpers');
+const { getSlot, ImplementationSlot } = require('../helpers/erc1967');
+
 const { expect } = require('chai');
+const { expectRevertCustomError } = require('../helpers/customError');
 
-const { getAddressInSlot, ImplementationSlot } = require('../helpers/storage');
+const DummyImplementation = artifacts.require('DummyImplementation');
 
-module.exports = function shouldBehaveLikeProxy() {
+module.exports = function shouldBehaveLikeProxy(createProxy, accounts) {
   it('cannot be initialized with a non-contract address', async function () {
-    const initializeData = '0x';
-    const contractFactory = await ethers.getContractFactory('ERC1967Proxy');
-    await expect(this.createProxy(this.nonContractAddress, initializeData))
-      .to.be.revertedWithCustomError(contractFactory, 'ERC1967InvalidImplementation')
-      .withArgs(this.nonContractAddress);
+    const nonContractAddress = accounts[0];
+    const initializeData = Buffer.from('');
+    await expectRevert.unspecified(createProxy(nonContractAddress, initializeData));
+  });
+
+  before('deploy implementation', async function () {
+    this.implementation = web3.utils.toChecksumAddress((await DummyImplementation.new()).address);
   });
 
   const assertProxyInitialization = function ({ value, balance }) {
     it('sets the implementation address', async function () {
-      expect(await getAddressInSlot(this.proxy, ImplementationSlot)).to.equal(this.implementation);
+      const implementationSlot = await getSlot(this.proxy, ImplementationSlot);
+      const implementationAddress = web3.utils.toChecksumAddress(implementationSlot.substr(-40));
+      expect(implementationAddress).to.be.equal(this.implementation);
     });
 
     it('initializes the proxy', async function () {
-      const dummy = this.implementation.attach(this.proxy);
-      expect(await dummy.value()).to.equal(value);
+      const dummy = new DummyImplementation(this.proxy);
+      expect(await dummy.value()).to.be.bignumber.equal(value.toString());
     });
 
     it('has expected balance', async function () {
-      expect(await ethers.provider.getBalance(this.proxy)).to.equal(balance);
+      expect(await web3.eth.getBalance(this.proxy)).to.be.bignumber.equal(balance.toString());
     });
   };
 
   describe('without initialization', function () {
-    const initializeData = '0x';
+    const initializeData = Buffer.from('');
 
     describe('when not sending balance', function () {
       beforeEach('creating proxy', async function () {
-        this.proxy = await this.createProxy(this.implementation, initializeData);
+        this.proxy = (await createProxy(this.implementation, initializeData)).address;
       });
 
-      assertProxyInitialization({ value: 0n, balance: 0n });
+      assertProxyInitialization({ value: 0, balance: 0 });
     });
 
     describe('when sending some balance', function () {
-      const value = 10n ** 5n;
+      const value = 10e5;
 
       it('reverts', async function () {
-        await expect(this.createProxy(this.implementation, initializeData, { value })).to.be.reverted;
+        await expectRevertCustomError(
+          createProxy(this.implementation, initializeData, { value }),
+          'ERC1967NonPayable',
+          [],
+        );
       });
     });
   });
 
   describe('initialization without parameters', function () {
     describe('non payable', function () {
-      const expectedInitializedValue = 10n;
-
-      beforeEach(function () {
-        this.initializeData = this.implementation.interface.encodeFunctionData('initializeNonPayable');
-      });
+      const expectedInitializedValue = 10;
+      const initializeData = new DummyImplementation('').contract.methods['initializeNonPayable()']().encodeABI();
 
       describe('when not sending balance', function () {
         beforeEach('creating proxy', async function () {
-          this.proxy = await this.createProxy(this.implementation, this.initializeData);
-        });
-
-        assertProxyInitialization({
-          value: expectedInitializedValue,
-          balance: 0n,
-        });
-      });
-
-      describe('when sending some balance', function () {
-        const value = 10n ** 5n;
-
-        it('reverts', async function () {
-          await expect(this.createProxy(this.implementation, this.initializeData, { value })).to.be.reverted;
-        });
-      });
-    });
-
-    describe('payable', function () {
-      const expectedInitializedValue = 100n;
-
-      beforeEach(function () {
-        this.initializeData = this.implementation.interface.encodeFunctionData('initializePayable');
-      });
-
-      describe('when not sending balance', function () {
-        beforeEach('creating proxy', async function () {
-          this.proxy = await this.createProxy(this.implementation, this.initializeData);
-        });
-
-        assertProxyInitialization({
-          value: expectedInitializedValue,
-          balance: 0n,
-        });
-      });
-
-      describe('when sending some balance', function () {
-        const value = 10e5;
-
-        beforeEach('creating proxy', async function () {
-          this.proxy = await this.createProxy(this.implementation, this.initializeData, { value });
-        });
-
-        assertProxyInitialization({
-          value: expectedInitializedValue,
-          balance: value,
-        });
-      });
-    });
-  });
-
-  describe('initialization with parameters', function () {
-    describe('non payable', function () {
-      const expectedInitializedValue = 10n;
-
-      beforeEach(function () {
-        this.initializeData = this.implementation.interface.encodeFunctionData('initializeNonPayableWithValue', [
-          expectedInitializedValue,
-        ]);
-      });
-
-      describe('when not sending balance', function () {
-        beforeEach('creating proxy', async function () {
-          this.proxy = await this.createProxy(this.implementation, this.initializeData);
+          this.proxy = (await createProxy(this.implementation, initializeData)).address;
         });
 
         assertProxyInitialization({
@@ -133,36 +78,90 @@ module.exports = function shouldBehaveLikeProxy() {
         const value = 10e5;
 
         it('reverts', async function () {
-          await expect(this.createProxy(this.implementation, this.initializeData, { value })).to.be.reverted;
+          await expectRevert.unspecified(createProxy(this.implementation, initializeData, { value }));
         });
       });
     });
 
     describe('payable', function () {
-      const expectedInitializedValue = 42n;
-
-      beforeEach(function () {
-        this.initializeData = this.implementation.interface.encodeFunctionData('initializePayableWithValue', [
-          expectedInitializedValue,
-        ]);
-      });
+      const expectedInitializedValue = 100;
+      const initializeData = new DummyImplementation('').contract.methods['initializePayable()']().encodeABI();
 
       describe('when not sending balance', function () {
         beforeEach('creating proxy', async function () {
-          this.proxy = await this.createProxy(this.implementation, this.initializeData);
+          this.proxy = (await createProxy(this.implementation, initializeData)).address;
         });
 
         assertProxyInitialization({
           value: expectedInitializedValue,
-          balance: 0n,
+          balance: 0,
         });
       });
 
       describe('when sending some balance', function () {
-        const value = 10n ** 5n;
+        const value = 10e5;
 
         beforeEach('creating proxy', async function () {
-          this.proxy = await this.createProxy(this.implementation, this.initializeData, { value });
+          this.proxy = (await createProxy(this.implementation, initializeData, { value })).address;
+        });
+
+        assertProxyInitialization({
+          value: expectedInitializedValue,
+          balance: value,
+        });
+      });
+    });
+  });
+
+  describe('initialization with parameters', function () {
+    describe('non payable', function () {
+      const expectedInitializedValue = 10;
+      const initializeData = new DummyImplementation('').contract.methods
+        .initializeNonPayableWithValue(expectedInitializedValue)
+        .encodeABI();
+
+      describe('when not sending balance', function () {
+        beforeEach('creating proxy', async function () {
+          this.proxy = (await createProxy(this.implementation, initializeData)).address;
+        });
+
+        assertProxyInitialization({
+          value: expectedInitializedValue,
+          balance: 0,
+        });
+      });
+
+      describe('when sending some balance', function () {
+        const value = 10e5;
+
+        it('reverts', async function () {
+          await expectRevert.unspecified(createProxy(this.implementation, initializeData, { value }));
+        });
+      });
+    });
+
+    describe('payable', function () {
+      const expectedInitializedValue = 42;
+      const initializeData = new DummyImplementation('').contract.methods
+        .initializePayableWithValue(expectedInitializedValue)
+        .encodeABI();
+
+      describe('when not sending balance', function () {
+        beforeEach('creating proxy', async function () {
+          this.proxy = (await createProxy(this.implementation, initializeData)).address;
+        });
+
+        assertProxyInitialization({
+          value: expectedInitializedValue,
+          balance: 0,
+        });
+      });
+
+      describe('when sending some balance', function () {
+        const value = 10e5;
+
+        beforeEach('creating proxy', async function () {
+          this.proxy = (await createProxy(this.implementation, initializeData, { value })).address;
         });
 
         assertProxyInitialization({
@@ -173,12 +172,10 @@ module.exports = function shouldBehaveLikeProxy() {
     });
 
     describe('reverting initialization', function () {
-      beforeEach(function () {
-        this.initializeData = this.implementation.interface.encodeFunctionData('reverts');
-      });
+      const initializeData = new DummyImplementation('').contract.methods.reverts().encodeABI();
 
       it('reverts', async function () {
-        await expect(this.createProxy(this.implementation, this.initializeData)).to.be.reverted;
+        await expectRevert(createProxy(this.implementation, initializeData), 'DummyImplementation reverted');
       });
     });
   });

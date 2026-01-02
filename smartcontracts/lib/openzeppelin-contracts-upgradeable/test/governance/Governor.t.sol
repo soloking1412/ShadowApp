@@ -9,11 +9,7 @@ import {Governor} from "@openzeppelin/contracts/governance/Governor.sol";
 contract GovernorInternalTest is Test, Governor {
     constructor() Governor("") {}
 
-    function testValidDescriptionForProposer(
-        string memory description,
-        address proposer,
-        bool includeProposer
-    ) public view {
+    function testValidDescriptionForProposer(string memory description, address proposer, bool includeProposer) public {
         if (includeProposer) {
             description = string.concat(description, "#proposer=", Strings.toHexString(proposer));
         }
@@ -24,13 +20,13 @@ contract GovernorInternalTest is Test, Governor {
         string memory description,
         address commitProposer,
         address actualProposer
-    ) public view {
+    ) public {
         vm.assume(commitProposer != actualProposer);
         description = string.concat(description, "#proposer=", Strings.toHexString(commitProposer));
         assertFalse(_isValidDescriptionForProposer(actualProposer, description));
     }
 
-    // We don't need to truly implement the missing functions because we are just testing
+    // We don't need to truly implement implement the missing functions because we are just testing
     // internal helpers.
 
     function clock() public pure override returns (uint48) {}
@@ -55,5 +51,5 @@ contract GovernorInternalTest is Test, Governor {
 
     function _getVotes(address, uint256, bytes memory) internal pure virtual override returns (uint256) {}
 
-    function _countVote(uint256, address, uint8, uint256, bytes memory) internal virtual override returns (uint256) {}
+    function _countVote(uint256, address, uint8, uint256, bytes memory) internal virtual override {}
 }

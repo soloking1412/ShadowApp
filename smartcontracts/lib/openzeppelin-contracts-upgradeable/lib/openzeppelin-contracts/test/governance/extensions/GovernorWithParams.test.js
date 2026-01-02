@@ -1,62 +1,66 @@
-const { ethers } = require('hardhat');
+const { expectEvent } = require('@openzeppelin/test-helpers');
 const { expect } = require('chai');
-const { loadFixture } = require('@nomicfoundation/hardhat-network-helpers');
+const ethSigUtil = require('eth-sig-util');
+const Wallet = require('ethereumjs-wallet').default;
 
+const Enums = require('../../helpers/enums');
+const { getDomain, domainType } = require('../../helpers/eip712');
 const { GovernorHelper } = require('../../helpers/governance');
-const { VoteType } = require('../../helpers/enums');
-const { getDomain, ExtendedBallot } = require('../../helpers/eip712');
+const { expectRevertCustomError } = require('../../helpers/customError');
 
-const TOKENS = [
-  { Token: '$ERC20Votes', mode: 'blocknumber' },
-  { Token: '$ERC20VotesTimestampMock', mode: 'timestamp' },
-];
+const Governor = artifacts.require('$GovernorWithParamsMock');
+const CallReceiver = artifacts.require('CallReceiverMock');
+const ERC1271WalletMock = artifacts.require('ERC1271WalletMock');
 
-const name = 'OZ-Governor';
-const version = '1';
-const tokenName = 'MockToken';
-const tokenSymbol = 'MTKN';
-const tokenSupply = ethers.parseEther('100');
-const votingDelay = 4n;
-const votingPeriod = 16n;
-const value = ethers.parseEther('1');
-
-const params = {
-  decoded: [42n, 'These are my params'],
-  encoded: ethers.AbiCoder.defaultAbiCoder().encode(['uint256', 'string'], [42n, 'These are my params']),
+const rawParams = {
+  uintParam: web3.utils.toBN('42'),
+  strParam: 'These are my params',
 };
 
-describe('GovernorWithParams', function () {
-  for (const { Token, mode } of TOKENS) {
-    const fixture = async () => {
-      const [owner, proposer, voter1, voter2, voter3, voter4, other] = await ethers.getSigners();
-      const receiver = await ethers.deployContract('CallReceiverMock');
+const encodedParams = web3.eth.abi.encodeParameters(['uint256', 'string'], Object.values(rawParams));
 
-      const token = await ethers.deployContract(Token, [tokenName, tokenSymbol, tokenName, version]);
-      const mock = await ethers.deployContract('$GovernorWithParamsMock', [name, token]);
+const TOKENS = [
+  { Token: artifacts.require('$ERC20Votes'), mode: 'blocknumber' },
+  { Token: artifacts.require('$ERC20VotesTimestampMock'), mode: 'timestamp' },
+];
 
-      await owner.sendTransaction({ to: mock, value });
-      await token.$_mint(owner, tokenSupply);
+contract('GovernorWithParams', function (accounts) {
+  const [owner, proposer, voter1, voter2, voter3, voter4] = accounts;
 
-      const helper = new GovernorHelper(mock, mode);
-      await helper.connect(owner).delegate({ token, to: voter1, value: ethers.parseEther('10') });
-      await helper.connect(owner).delegate({ token, to: voter2, value: ethers.parseEther('7') });
-      await helper.connect(owner).delegate({ token, to: voter3, value: ethers.parseEther('5') });
-      await helper.connect(owner).delegate({ token, to: voter4, value: ethers.parseEther('2') });
+  const name = 'OZ-Governor';
+  const version = '1';
+  const tokenName = 'MockToken';
+  const tokenSymbol = 'MTKN';
+  const tokenSupply = web3.utils.toWei('100');
+  const votingDelay = web3.utils.toBN(4);
+  const votingPeriod = web3.utils.toBN(16);
+  const value = web3.utils.toWei('1');
 
-      return { owner, proposer, voter1, voter2, voter3, voter4, other, receiver, token, mock, helper };
-    };
-
-    describe(`using ${Token}`, function () {
+  for (const { mode, Token } of TOKENS) {
+    describe(`using ${Token._json.contractName}`, function () {
       beforeEach(async function () {
-        Object.assign(this, await loadFixture(fixture));
+        this.chainId = await web3.eth.getChainId();
+        this.token = await Token.new(tokenName, tokenSymbol, tokenName, version);
+        this.mock = await Governor.new(name, this.token.address);
+        this.receiver = await CallReceiver.new();
+
+        this.helper = new GovernorHelper(this.mock, mode);
+
+        await web3.eth.sendTransaction({ from: owner, to: this.mock.address, value });
+
+        await this.token.$_mint(owner, tokenSupply);
+        await this.helper.delegate({ token: this.token, to: voter1, value: web3.utils.toWei('10') }, { from: owner });
+        await this.helper.delegate({ token: this.token, to: voter2, value: web3.utils.toWei('7') }, { from: owner });
+        await this.helper.delegate({ token: this.token, to: voter3, value: web3.utils.toWei('5') }, { from: owner });
+        await this.helper.delegate({ token: this.token, to: voter4, value: web3.utils.toWei('2') }, { from: owner });
 
         // default proposal
         this.proposal = this.helper.setProposal(
           [
             {
-              target: this.receiver.target,
+              target: this.receiver.address,
               value,
-              data: this.receiver.interface.encodeFunctionData('mockFunction'),
+              data: this.receiver.contract.methods.mockFunction().encodeABI(),
             },
           ],
           '<proposal description>',
@@ -64,180 +68,208 @@ describe('GovernorWithParams', function () {
       });
 
       it('deployment check', async function () {
-        expect(await this.mock.name()).to.equal(name);
-        expect(await this.mock.token()).to.equal(this.token);
-        expect(await this.mock.votingDelay()).to.equal(votingDelay);
-        expect(await this.mock.votingPeriod()).to.equal(votingPeriod);
+        expect(await this.mock.name()).to.be.equal(name);
+        expect(await this.mock.token()).to.be.equal(this.token.address);
+        expect(await this.mock.votingDelay()).to.be.bignumber.equal(votingDelay);
+        expect(await this.mock.votingPeriod()).to.be.bignumber.equal(votingPeriod);
       });
 
       it('nominal is unaffected', async function () {
-        await this.helper.connect(this.proposer).propose();
+        await this.helper.propose({ from: proposer });
         await this.helper.waitForSnapshot();
-        await this.helper.connect(this.voter1).vote({ support: VoteType.For, reason: 'This is nice' });
-        await this.helper.connect(this.voter2).vote({ support: VoteType.For });
-        await this.helper.connect(this.voter3).vote({ support: VoteType.Against });
-        await this.helper.connect(this.voter4).vote({ support: VoteType.Abstain });
+        await this.helper.vote({ support: Enums.VoteType.For, reason: 'This is nice' }, { from: voter1 });
+        await this.helper.vote({ support: Enums.VoteType.For }, { from: voter2 });
+        await this.helper.vote({ support: Enums.VoteType.Against }, { from: voter3 });
+        await this.helper.vote({ support: Enums.VoteType.Abstain }, { from: voter4 });
         await this.helper.waitForDeadline();
         await this.helper.execute();
 
-        expect(await this.mock.hasVoted(this.proposal.id, this.owner)).to.be.false;
-        expect(await this.mock.hasVoted(this.proposal.id, this.voter1)).to.be.true;
-        expect(await this.mock.hasVoted(this.proposal.id, this.voter2)).to.be.true;
-        expect(await ethers.provider.getBalance(this.mock)).to.equal(0n);
-        expect(await ethers.provider.getBalance(this.receiver)).to.equal(value);
+        expect(await this.mock.hasVoted(this.proposal.id, owner)).to.be.equal(false);
+        expect(await this.mock.hasVoted(this.proposal.id, voter1)).to.be.equal(true);
+        expect(await this.mock.hasVoted(this.proposal.id, voter2)).to.be.equal(true);
+        expect(await web3.eth.getBalance(this.mock.address)).to.be.bignumber.equal('0');
+        expect(await web3.eth.getBalance(this.receiver.address)).to.be.bignumber.equal(value);
       });
 
       it('Voting with params is properly supported', async function () {
-        await this.helper.connect(this.proposer).propose();
+        await this.helper.propose({ from: proposer });
         await this.helper.waitForSnapshot();
 
-        const weight = ethers.parseEther('7') - params.decoded[0];
+        const weight = web3.utils.toBN(web3.utils.toWei('7')).sub(rawParams.uintParam);
 
-        await expect(
-          this.helper.connect(this.voter2).vote({
-            support: VoteType.For,
+        const tx = await this.helper.vote(
+          {
+            support: Enums.VoteType.For,
             reason: 'no particular reason',
-            params: params.encoded,
-          }),
-        )
-          .to.emit(this.mock, 'CountParams')
-          .withArgs(...params.decoded)
-          .to.emit(this.mock, 'VoteCastWithParams')
-          .withArgs(
-            this.voter2.address,
-            this.proposal.id,
-            VoteType.For,
-            weight,
-            'no particular reason',
-            params.encoded,
-          );
+            params: encodedParams,
+          },
+          { from: voter2 },
+        );
 
-        expect(await this.mock.proposalVotes(this.proposal.id)).to.deep.equal([0n, weight, 0n]);
+        expectEvent(tx, 'CountParams', { ...rawParams });
+        expectEvent(tx, 'VoteCastWithParams', {
+          voter: voter2,
+          proposalId: this.proposal.id,
+          support: Enums.VoteType.For,
+          weight,
+          reason: 'no particular reason',
+          params: encodedParams,
+        });
+
+        const votes = await this.mock.proposalVotes(this.proposal.id);
+        expect(votes.forVotes).to.be.bignumber.equal(weight);
       });
 
       describe('voting by signature', function () {
+        beforeEach(async function () {
+          this.voterBySig = Wallet.generate();
+          this.voterBySig.address = web3.utils.toChecksumAddress(this.voterBySig.getAddressString());
+
+          this.data = (contract, message) =>
+            getDomain(contract).then(domain => ({
+              primaryType: 'ExtendedBallot',
+              types: {
+                EIP712Domain: domainType(domain),
+                ExtendedBallot: [
+                  { name: 'proposalId', type: 'uint256' },
+                  { name: 'support', type: 'uint8' },
+                  { name: 'voter', type: 'address' },
+                  { name: 'nonce', type: 'uint256' },
+                  { name: 'reason', type: 'string' },
+                  { name: 'params', type: 'bytes' },
+                ],
+              },
+              domain,
+              message,
+            }));
+
+          this.sign = privateKey => async (contract, message) =>
+            ethSigUtil.signTypedMessage(privateKey, { data: await this.data(contract, message) });
+        });
+
         it('supports EOA signatures', async function () {
-          await this.token.connect(this.voter2).delegate(this.other);
+          await this.token.delegate(this.voterBySig.address, { from: voter2 });
+
+          const weight = web3.utils.toBN(web3.utils.toWei('7')).sub(rawParams.uintParam);
+
+          const nonce = await this.mock.nonces(this.voterBySig.address);
 
           // Run proposal
           await this.helper.propose();
           await this.helper.waitForSnapshot();
-
-          // Prepare vote
-          const weight = ethers.parseEther('7') - params.decoded[0];
-          const nonce = await this.mock.nonces(this.other);
-          const data = {
-            proposalId: this.proposal.id,
-            support: VoteType.For,
-            voter: this.other.address,
+          const tx = await this.helper.vote({
+            support: Enums.VoteType.For,
+            voter: this.voterBySig.address,
             nonce,
             reason: 'no particular reason',
-            params: params.encoded,
-            signature: (contract, message) =>
-              getDomain(contract).then(domain => this.other.signTypedData(domain, { ExtendedBallot }, message)),
-          };
+            params: encodedParams,
+            signature: this.sign(this.voterBySig.getPrivateKey()),
+          });
 
-          // Vote
-          await expect(this.helper.vote(data))
-            .to.emit(this.mock, 'CountParams')
-            .withArgs(...params.decoded)
-            .to.emit(this.mock, 'VoteCastWithParams')
-            .withArgs(data.voter, data.proposalId, data.support, weight, data.reason, data.params);
+          expectEvent(tx, 'CountParams', { ...rawParams });
+          expectEvent(tx, 'VoteCastWithParams', {
+            voter: this.voterBySig.address,
+            proposalId: this.proposal.id,
+            support: Enums.VoteType.For,
+            weight,
+            reason: 'no particular reason',
+            params: encodedParams,
+          });
 
-          expect(await this.mock.proposalVotes(this.proposal.id)).to.deep.equal([0n, weight, 0n]);
-          expect(await this.mock.nonces(this.other)).to.equal(nonce + 1n);
+          const votes = await this.mock.proposalVotes(this.proposal.id);
+          expect(votes.forVotes).to.be.bignumber.equal(weight);
+          expect(await this.mock.nonces(this.voterBySig.address)).to.be.bignumber.equal(nonce.addn(1));
         });
 
         it('supports EIP-1271 signature signatures', async function () {
-          const wallet = await ethers.deployContract('ERC1271WalletMock', [this.other]);
-          await this.token.connect(this.voter2).delegate(wallet);
+          const ERC1271WalletOwner = Wallet.generate();
+          ERC1271WalletOwner.address = web3.utils.toChecksumAddress(ERC1271WalletOwner.getAddressString());
+
+          const wallet = await ERC1271WalletMock.new(ERC1271WalletOwner.address);
+
+          await this.token.delegate(wallet.address, { from: voter2 });
+
+          const weight = web3.utils.toBN(web3.utils.toWei('7')).sub(rawParams.uintParam);
+
+          const nonce = await this.mock.nonces(wallet.address);
 
           // Run proposal
           await this.helper.propose();
           await this.helper.waitForSnapshot();
-
-          // Prepare vote
-          const weight = ethers.parseEther('7') - params.decoded[0];
-          const nonce = await this.mock.nonces(this.other);
-          const data = {
-            proposalId: this.proposal.id,
-            support: VoteType.For,
-            voter: wallet.target,
+          const tx = await this.helper.vote({
+            support: Enums.VoteType.For,
+            voter: wallet.address,
             nonce,
             reason: 'no particular reason',
-            params: params.encoded,
-            signature: (contract, message) =>
-              getDomain(contract).then(domain => this.other.signTypedData(domain, { ExtendedBallot }, message)),
-          };
+            params: encodedParams,
+            signature: this.sign(ERC1271WalletOwner.getPrivateKey()),
+          });
 
-          // Vote
-          await expect(this.helper.vote(data))
-            .to.emit(this.mock, 'CountParams')
-            .withArgs(...params.decoded)
-            .to.emit(this.mock, 'VoteCastWithParams')
-            .withArgs(data.voter, data.proposalId, data.support, weight, data.reason, data.params);
+          expectEvent(tx, 'CountParams', { ...rawParams });
+          expectEvent(tx, 'VoteCastWithParams', {
+            voter: wallet.address,
+            proposalId: this.proposal.id,
+            support: Enums.VoteType.For,
+            weight,
+            reason: 'no particular reason',
+            params: encodedParams,
+          });
 
-          expect(await this.mock.proposalVotes(this.proposal.id)).to.deep.equal([0n, weight, 0n]);
-          expect(await this.mock.nonces(wallet)).to.equal(nonce + 1n);
+          const votes = await this.mock.proposalVotes(this.proposal.id);
+          expect(votes.forVotes).to.be.bignumber.equal(weight);
+          expect(await this.mock.nonces(wallet.address)).to.be.bignumber.equal(nonce.addn(1));
         });
 
         it('reverts if signature does not match signer', async function () {
-          await this.token.connect(this.voter2).delegate(this.other);
+          await this.token.delegate(this.voterBySig.address, { from: voter2 });
+
+          const nonce = await this.mock.nonces(this.voterBySig.address);
+
+          const signature = this.sign(this.voterBySig.getPrivateKey());
 
           // Run proposal
           await this.helper.propose();
           await this.helper.waitForSnapshot();
-
-          // Prepare vote
-          const nonce = await this.mock.nonces(this.other);
-          const data = {
-            proposalId: this.proposal.id,
-            support: VoteType.For,
-            voter: this.other.address,
+          const voteParams = {
+            support: Enums.VoteType.For,
+            voter: this.voterBySig.address,
             nonce,
+            signature: async (...params) => {
+              const sig = await signature(...params);
+              const tamperedSig = web3.utils.hexToBytes(sig);
+              tamperedSig[42] ^= 0xff;
+              return web3.utils.bytesToHex(tamperedSig);
+            },
             reason: 'no particular reason',
-            params: params.encoded,
-            // tampered signature
-            signature: (contract, message) =>
-              getDomain(contract)
-                .then(domain => this.other.signTypedData(domain, { ExtendedBallot }, message))
-                .then(signature => {
-                  const tamperedSig = ethers.toBeArray(signature);
-                  tamperedSig[42] ^= 0xff;
-                  return ethers.hexlify(tamperedSig);
-                }),
+            params: encodedParams,
           };
 
-          // Vote
-          await expect(this.helper.vote(data))
-            .to.be.revertedWithCustomError(this.mock, 'GovernorInvalidSignature')
-            .withArgs(data.voter);
+          await expectRevertCustomError(this.helper.vote(voteParams), 'GovernorInvalidSignature', [voteParams.voter]);
         });
 
         it('reverts if vote nonce is incorrect', async function () {
-          await this.token.connect(this.voter2).delegate(this.other);
+          await this.token.delegate(this.voterBySig.address, { from: voter2 });
+
+          const nonce = await this.mock.nonces(this.voterBySig.address);
 
           // Run proposal
           await this.helper.propose();
           await this.helper.waitForSnapshot();
-
-          // Prepare vote
-          const nonce = await this.mock.nonces(this.other);
-          const data = {
-            proposalId: this.proposal.id,
-            support: VoteType.For,
-            voter: this.other.address,
-            nonce: nonce + 1n,
+          const voteParams = {
+            support: Enums.VoteType.For,
+            voter: this.voterBySig.address,
+            nonce: nonce.addn(1),
+            signature: this.sign(this.voterBySig.getPrivateKey()),
             reason: 'no particular reason',
-            params: params.encoded,
-            signature: (contract, message) =>
-              getDomain(contract).then(domain => this.other.signTypedData(domain, { ExtendedBallot }, message)),
+            params: encodedParams,
           };
 
-          // Vote
-          await expect(this.helper.vote(data))
-            .to.be.revertedWithCustomError(this.mock, 'GovernorInvalidSignature')
-            .withArgs(data.voter);
+          await expectRevertCustomError(
+            this.helper.vote(voteParams),
+            // The signature check implies the nonce can't be tampered without changing the signer
+            'GovernorInvalidSignature',
+            [voteParams.voter],
+          );
         });
       });
     });

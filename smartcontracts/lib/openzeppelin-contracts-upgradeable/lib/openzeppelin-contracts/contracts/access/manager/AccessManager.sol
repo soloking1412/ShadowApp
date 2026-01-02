@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Contracts (last updated v5.5.0) (access/manager/AccessManager.sol)
+// OpenZeppelin Contracts (last updated v5.0.0) (access/manager/AccessManager.sol)
 
 pragma solidity ^0.8.20;
 
@@ -10,7 +10,6 @@ import {Context} from "../../utils/Context.sol";
 import {Multicall} from "../../utils/Multicall.sol";
 import {Math} from "../../utils/math/Math.sol";
 import {Time} from "../../utils/types/Time.sol";
-import {Hashes} from "../../utils/cryptography/Hashes.sol";
 
 /**
  * @dev AccessManager is a central contract to store the permissions of a system.
@@ -56,8 +55,8 @@ import {Hashes} from "../../utils/cryptography/Hashes.sol";
  * will be {AccessManager} itself.
  *
  * WARNING: When granting permissions over an {Ownable} or {AccessControl} contract to an {AccessManager}, be very
- * mindful of the danger associated with functions such as {Ownable-renounceOwnership} or
- * {AccessControl-renounceRole}.
+ * mindful of the danger associated with functions such as {{Ownable-renounceOwnership}} or
+ * {{AccessControl-renounceRole}}.
  */
 contract AccessManager is Context, Multicall, IAccessManager {
     using Time for *;
@@ -69,7 +68,7 @@ contract AccessManager is Context, Multicall, IAccessManager {
         bool closed;
     }
 
-    // Structure that stores the details for a role/account pair. This structure fits into a single slot.
+    // Structure that stores the details for a role/account pair. This structures fit into a single slot.
     struct Access {
         // Timepoint at which the user gets the permission.
         // If this is either 0 or in the future, then the role permission is not available.
@@ -98,15 +97,7 @@ contract AccessManager is Context, Multicall, IAccessManager {
         uint32 nonce;
     }
 
-    /**
-     * @dev The identifier of the admin role. Required to perform most configuration operations including
-     * other roles' management and target restrictions.
-     */
     uint64 public constant ADMIN_ROLE = type(uint64).min; // 0
-
-    /**
-     * @dev The identifier of the public role. Automatically granted to all addresses with no delay.
-     */
     uint64 public constant PUBLIC_ROLE = type(uint64).max; // 2**64-1
 
     mapping(address target => TargetConfig mode) private _targets;
@@ -118,8 +109,8 @@ contract AccessManager is Context, Multicall, IAccessManager {
     bytes32 private _executionId;
 
     /**
-     * @dev Check that the caller is authorized to perform the operation.
-     * See {AccessManager} description for a detailed breakdown of the authorization logic.
+     * @dev Check that the caller is authorized to perform the operation, following the restrictions encoded in
+     * {_getAdminRestrictions}.
      */
     modifier onlyAuthorized() {
         _checkAuthorized();
@@ -421,6 +412,9 @@ contract AccessManager is Context, Multicall, IAccessManager {
      * Emits a {TargetClosed} event.
      */
     function _setTargetClosed(address target, bool closed) internal virtual {
+        if (target == address(this)) {
+            revert AccessManagerLockedAccount(target);
+        }
         _targets[target].closed = closed;
         emit TargetClosed(target, closed);
     }
@@ -450,7 +444,7 @@ contract AccessManager is Context, Multicall, IAccessManager {
 
         uint48 minWhen = Time.timestamp() + setback;
 
-        // If call with delay is not authorized, or if requested timing is too soon, revert
+        // if call with delay is not authorized, or if requested timing is too soon
         if (setback == 0 || (when > 0 && when < minWhen)) {
             revert AccessManagerUnauthorizedCall(caller, target, _checkSelector(data));
         }
@@ -476,8 +470,7 @@ contract AccessManager is Context, Multicall, IAccessManager {
 
     /**
      * @dev Reverts if the operation is currently scheduled and has not expired.
-     *
-     * NOTE: This function was introduced due to stack too deep errors in schedule.
+     * (Note: This function was introduced due to stack too deep errors in schedule.)
      */
     function _checkNotScheduled(bytes32 operationId) private view {
         uint48 prevTimepoint = _schedules[operationId].timepoint;
@@ -496,7 +489,7 @@ contract AccessManager is Context, Multicall, IAccessManager {
         // Fetch restrictions that apply to the caller on the targeted function
         (bool immediate, uint32 setback) = _canCallExtended(caller, target, data);
 
-        // If call is not authorized, revert
+        // If caller is not authorised, revert
         if (!immediate && setback == 0) {
             revert AccessManagerUnauthorizedCall(caller, target, _checkSelector(data));
         }
@@ -592,9 +585,7 @@ contract AccessManager is Context, Multicall, IAccessManager {
 
     // ================================================= ADMIN LOGIC ==================================================
     /**
-     * @dev Check if the current call is authorized according to admin and roles logic.
-     *
-     * WARNING: Carefully review the considerations of {AccessManaged-restricted} since they apply to this modifier.
+     * @dev Check if the current call is authorized according to admin logic.
      */
     function _checkAuthorized() private {
         address caller = _msgSender();
@@ -619,7 +610,7 @@ contract AccessManager is Context, Multicall, IAccessManager {
      */
     function _getAdminRestrictions(
         bytes calldata data
-    ) private view returns (bool adminRestricted, uint64 roleAdminId, uint32 executionDelay) {
+    ) private view returns (bool restricted, uint64 roleAdminId, uint32 executionDelay) {
         if (data.length < 4) {
             return (false, 0, 0);
         }
@@ -656,7 +647,7 @@ contract AccessManager is Context, Multicall, IAccessManager {
             return (true, getRoleAdmin(roleId), 0);
         }
 
-        return (false, getTargetFunctionRole(address(this), selector), 0);
+        return (false, 0, 0);
     }
 
     // =================================================== HELPERS ====================================================
@@ -681,7 +672,7 @@ contract AccessManager is Context, Multicall, IAccessManager {
     }
 
     /**
-     * @dev A version of {canCall} that checks for restrictions in this contract.
+     * @dev A version of {canCall} that checks for admin restrictions in this contract.
      */
     function _canCallSelf(address caller, bytes calldata data) private view returns (bool immediate, uint32 delay) {
         if (data.length < 4) {
@@ -694,10 +685,8 @@ contract AccessManager is Context, Multicall, IAccessManager {
             return (_isExecuting(address(this), _checkSelector(data)), 0);
         }
 
-        (bool adminRestricted, uint64 roleId, uint32 operationDelay) = _getAdminRestrictions(data);
-
-        // isTargetClosed apply to non-admin-restricted function
-        if (!adminRestricted && isTargetClosed(address(this))) {
+        (bool enabled, uint64 roleId, uint32 operationDelay) = _getAdminRestrictions(data);
+        if (!enabled) {
             return (false, 0);
         }
 
@@ -736,6 +725,6 @@ contract AccessManager is Context, Multicall, IAccessManager {
      * @dev Hashing function for execute protection
      */
     function _hashExecutionId(address target, bytes4 selector) private pure returns (bytes32) {
-        return Hashes.efficientKeccak256(bytes32(uint256(uint160(target))), selector);
+        return keccak256(abi.encode(target, selector));
     }
 }

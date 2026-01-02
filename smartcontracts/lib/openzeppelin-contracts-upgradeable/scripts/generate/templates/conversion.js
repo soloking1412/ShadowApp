@@ -2,8 +2,6 @@ function toBytes32(type, value) {
   switch (type) {
     case 'bytes32':
       return value;
-    case 'bytes4':
-      return `bytes32(${value})`;
     case 'uint256':
       return `bytes32(${value})`;
     case 'address':
@@ -17,8 +15,6 @@ function fromBytes32(type, value) {
   switch (type) {
     case 'bytes32':
       return value;
-    case 'bytes4':
-      return `bytes4(${value})`;
     case 'uint256':
       return `uint256(${value})`;
     case 'address':

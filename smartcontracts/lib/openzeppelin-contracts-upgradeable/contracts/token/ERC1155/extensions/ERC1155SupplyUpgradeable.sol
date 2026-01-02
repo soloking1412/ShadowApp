@@ -1,14 +1,13 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Contracts (last updated v5.5.0) (token/ERC1155/extensions/ERC1155Supply.sol)
+// OpenZeppelin Contracts (last updated v5.0.0) (token/ERC1155/extensions/ERC1155Supply.sol)
 
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.20;
 
 import {ERC1155Upgradeable} from "../ERC1155Upgradeable.sol";
-import {Arrays} from "@openzeppelin/contracts/utils/Arrays.sol";
-import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
+import {Initializable} from "../../../proxy/utils/Initializable.sol";
 
 /**
- * @dev Extension of ERC-1155 that adds tracking of total supply per id.
+ * @dev Extension of ERC1155 that adds tracking of total supply per id.
  *
  * Useful for scenarios where Fungible and Non-fungible tokens have to be
  * clearly identified. Note: While a totalSupply of 1 might mean the
@@ -21,8 +20,6 @@ import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.s
  * CAUTION: This extension should not be added in an upgrade to an already deployed contract.
  */
 abstract contract ERC1155SupplyUpgradeable is Initializable, ERC1155Upgradeable {
-    using Arrays for uint256[];
-
     /// @custom:storage-location erc7201:openzeppelin.storage.ERC1155Supply
     struct ERC1155SupplyStorage {
         mapping(uint256 id => uint256) _totalSupply;
@@ -66,7 +63,9 @@ abstract contract ERC1155SupplyUpgradeable is Initializable, ERC1155Upgradeable 
         return totalSupply(id) > 0;
     }
 
-    /// @inheritdoc ERC1155Upgradeable
+    /**
+     * @dev See {ERC1155-_update}.
+     */
     function _update(
         address from,
         address to,
@@ -79,9 +78,9 @@ abstract contract ERC1155SupplyUpgradeable is Initializable, ERC1155Upgradeable 
         if (from == address(0)) {
             uint256 totalMintValue = 0;
             for (uint256 i = 0; i < ids.length; ++i) {
-                uint256 value = values.unsafeMemoryAccess(i);
+                uint256 value = values[i];
                 // Overflow check required: The rest of the code assumes that totalSupply never overflows
-                $._totalSupply[ids.unsafeMemoryAccess(i)] += value;
+                $._totalSupply[ids[i]] += value;
                 totalMintValue += value;
             }
             // Overflow check required: The rest of the code assumes that totalSupplyAll never overflows
@@ -91,11 +90,11 @@ abstract contract ERC1155SupplyUpgradeable is Initializable, ERC1155Upgradeable 
         if (to == address(0)) {
             uint256 totalBurnValue = 0;
             for (uint256 i = 0; i < ids.length; ++i) {
-                uint256 value = values.unsafeMemoryAccess(i);
+                uint256 value = values[i];
 
                 unchecked {
                     // Overflow not possible: values[i] <= balanceOf(from, ids[i]) <= totalSupply(ids[i])
-                    $._totalSupply[ids.unsafeMemoryAccess(i)] -= value;
+                    $._totalSupply[ids[i]] -= value;
                     // Overflow not possible: sum_i(values[i]) <= sum_i(totalSupply(ids[i])) <= totalSupplyAll
                     totalBurnValue += value;
                 }

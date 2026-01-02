@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: MIT
 
 pragma solidity ^0.8.20;
-import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
+import {Initializable} from "../proxy/utils/Initializable.sol";
 
 contract CallReceiverMockUpgradeable is Initializable {
     event MockFunctionCalled();
     event MockFunctionCalledWithArgs(uint256 a, uint256 b);
-    event MockFunctionCalledExtra(address caller, uint256 value);
 
     uint256[] private _array;
 
@@ -17,13 +16,7 @@ contract CallReceiverMockUpgradeable is Initializable {
     }
     function mockFunction() public payable returns (string memory) {
         emit MockFunctionCalled();
-        return "0x1234";
-    }
 
-    function mockFunctionWritesStorage(bytes32 slot, bytes32 value) public returns (string memory) {
-        assembly ("memory-safe") {
-            sstore(slot, value)
-        }
         return "0x1234";
     }
 
@@ -31,35 +24,10 @@ contract CallReceiverMockUpgradeable is Initializable {
         emit MockFunctionCalled();
     }
 
-    function mockFunctionEmptyReturnWritesStorage(bytes32 slot, bytes32 value) public payable {
-        assembly ("memory-safe") {
-            sstore(slot, value)
-        }
-        emit MockFunctionCalled();
-    }
-
     function mockFunctionWithArgs(uint256 a, uint256 b) public payable returns (string memory) {
         emit MockFunctionCalledWithArgs(a, b);
 
         return "0x1234";
-    }
-
-    function mockFunctionWithArgsReturn(uint256 a, uint256 b) public payable returns (uint256, uint256) {
-        emit MockFunctionCalledWithArgs(a, b);
-        return (a, b);
-    }
-
-    function mockFunctionWithArgsReturnWritesStorage(
-        bytes32 slot,
-        bytes32 value,
-        uint256 a,
-        uint256 b
-    ) public payable returns (uint256, uint256) {
-        assembly ("memory-safe") {
-            sstore(slot, value)
-        }
-        emit MockFunctionCalledWithArgs(a, b);
-        return (a, b);
     }
 
     function mockFunctionNonPayable() public returns (string memory) {
@@ -70,10 +38,6 @@ contract CallReceiverMockUpgradeable is Initializable {
 
     function mockStaticFunction() public pure returns (string memory) {
         return "0x1234";
-    }
-
-    function mockStaticFunctionWithArgsReturn(uint256 a, uint256 b) public pure returns (uint256, uint256) {
-        return (a, b);
     }
 
     function mockFunctionRevertsNoReason() public payable {
@@ -94,8 +58,11 @@ contract CallReceiverMockUpgradeable is Initializable {
         }
     }
 
-    function mockFunctionExtra() public payable {
-        emit MockFunctionCalledExtra(msg.sender, msg.value);
+    function mockFunctionWritesStorage(bytes32 slot, bytes32 value) public returns (string memory) {
+        assembly {
+            sstore(slot, value)
+        }
+        return "0x1234";
     }
 }
 

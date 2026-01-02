@@ -1,14 +1,5 @@
-const { ethers } = require('hardhat');
-
-const selector = signature => ethers.FunctionFragment.from(signature).selector;
-
-const interfaceId = signatures =>
-  ethers.toBeHex(
-    signatures.reduce((acc, signature) => acc ^ ethers.toBigInt(selector(signature)), 0n),
-    4,
-  );
+const { soliditySha3 } = require('web3-utils');
 
 module.exports = {
-  selector,
-  interfaceId,
+  selector: signature => soliditySha3(signature).substring(0, 10),
 };

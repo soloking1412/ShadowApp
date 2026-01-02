@@ -10,7 +10,7 @@ dist_tag() {
   if [ "$PRERELEASE" = "true" ]; then
     echo "next"
   elif npx semver -r ">$LATEST_NPM_VERSION" "$PACKAGE_JSON_VERSION" > /dev/null; then
-    echo "dev"
+    echo "latest"
   else
     # This is a patch for an older version
     # npm can't publish without a tag

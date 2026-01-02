@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Contracts (last updated v5.5.0) (access/extensions/AccessControlEnumerable.sol)
+// OpenZeppelin Contracts (last updated v5.0.0) (access/extensions/AccessControlEnumerable.sol)
 
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.20;
 
 import {IAccessControlEnumerable} from "@openzeppelin/contracts/access/extensions/IAccessControlEnumerable.sol";
 import {AccessControlUpgradeable} from "../AccessControlUpgradeable.sol";
 import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
-import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
+import {Initializable} from "../../proxy/utils/Initializable.sol";
 
 /**
  * @dev Extension of {AccessControl} that allows enumerating the members of each role.
@@ -34,7 +33,9 @@ abstract contract AccessControlEnumerableUpgradeable is Initializable, IAccessCo
 
     function __AccessControlEnumerable_init_unchained() internal onlyInitializing {
     }
-    /// @inheritdoc IERC165
+    /**
+     * @dev See {IERC165-supportsInterface}.
+     */
     function supportsInterface(bytes4 interfaceId) public view virtual override returns (bool) {
         return interfaceId == type(IAccessControlEnumerable).interfaceId || super.supportsInterface(interfaceId);
     }
@@ -63,19 +64,6 @@ abstract contract AccessControlEnumerableUpgradeable is Initializable, IAccessCo
     function getRoleMemberCount(bytes32 role) public view virtual returns (uint256) {
         AccessControlEnumerableStorage storage $ = _getAccessControlEnumerableStorage();
         return $._roleMembers[role].length();
-    }
-
-    /**
-     * @dev Return all accounts that have `role`
-     *
-     * WARNING: This operation will copy the entire storage to memory, which can be quite expensive. This is designed
-     * to mostly be used by view accessors that are queried without any gas fees. Developers should keep in mind that
-     * this function has an unbounded cost, and using it as part of a state-changing function may render the function
-     * uncallable if the set grows to a point where copying to memory consumes too much gas to fit in a block.
-     */
-    function getRoleMembers(bytes32 role) public view virtual returns (address[] memory) {
-        AccessControlEnumerableStorage storage $ = _getAccessControlEnumerableStorage();
-        return $._roleMembers[role].values();
     }
 
     /**

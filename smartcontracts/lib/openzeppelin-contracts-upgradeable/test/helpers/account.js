@@ -1,15 +1,13 @@
-const { ethers } = require('hardhat');
+const { web3 } = require('hardhat');
 const { impersonateAccount, setBalance } = require('@nomicfoundation/hardhat-network-helpers');
 
 // Hardhat default balance
-const DEFAULT_BALANCE = 10000n * ethers.WeiPerEther;
+const DEFAULT_BALANCE = web3.utils.toBN('10000000000000000000000');
 
-const impersonate = (account, balance = DEFAULT_BALANCE) => {
-  const address = account.target ?? account.address ?? account;
-  return impersonateAccount(address)
-    .then(() => setBalance(address, balance))
-    .then(() => ethers.getSigner(address));
-};
+async function impersonate(account, balance = DEFAULT_BALANCE) {
+  await impersonateAccount(account);
+  await setBalance(account, balance);
+}
 
 module.exports = {
   impersonate,

@@ -1,16 +1,13 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Contracts (last updated v5.5.0) (governance/IGovernor.sol)
+// OpenZeppelin Contracts (last updated v5.0.0) (governance/IGovernor.sol)
 
-pragma solidity >=0.8.4;
+pragma solidity ^0.8.20;
 
 import {IERC165} from "../interfaces/IERC165.sol";
 import {IERC6372} from "../interfaces/IERC6372.sol";
 
 /**
  * @dev Interface of the {Governor} core.
- *
- * NOTE: Event parameters lack the `indexed` keyword for compatibility with GovernorBravo events.
- * Making event parameters `indexed` affects how events are decoded, potentially breaking existing indexers.
  */
 interface IGovernor is IERC165, IERC6372 {
     enum ProposalState {
@@ -38,6 +35,11 @@ interface IGovernor is IERC165, IERC6372 {
      * @dev Token deposits are disabled in this contract.
      */
     error GovernorDisabledDeposit();
+
+    /**
+     * @dev The `account` is not a proposer.
+     */
+    error GovernorOnlyProposer(address account);
 
     /**
      * @dev The `account` is not the governance executor.
@@ -82,11 +84,6 @@ interface IGovernor is IERC165, IERC6372 {
     error GovernorInvalidVoteType();
 
     /**
-     * @dev The provided params buffer is not supported by the counting module.
-     */
-    error GovernorInvalidVoteParams();
-
-    /**
      * @dev Queue operation is not implemented for this governor. Execute should be called directly.
      */
     error GovernorQueueNotImplemented();
@@ -106,11 +103,6 @@ interface IGovernor is IERC165, IERC6372 {
      * If the `voter` is a contract, the signature is not valid using {IERC1271-isValidSignature}.
      */
     error GovernorInvalidSignature(address voter);
-
-    /**
-     * @dev The given `account` is unable to cancel the proposal with given `proposalId`.
-     */
-    error GovernorUnableToCancel(uint256 proposalId, address account);
 
     /**
      * @dev Emitted when a proposal is created.
@@ -153,7 +145,7 @@ interface IGovernor is IERC165, IERC6372 {
      * @dev Emitted when a vote is cast with params.
      *
      * Note: `support` values should be seen as buckets. Their interpretation depends on the voting module used.
-     * `params` are additional encoded parameters. Their interpretation  also depends on the voting module used.
+     * `params` are additional encoded parameters. Their interpepretation also depends on the voting module used.
      */
     event VoteCastWithParams(
         address indexed voter,
@@ -166,13 +158,13 @@ interface IGovernor is IERC165, IERC6372 {
 
     /**
      * @notice module:core
-     * @dev Name of the governor instance (used in building the EIP-712 domain separator).
+     * @dev Name of the governor instance (used in building the ERC712 domain separator).
      */
     function name() external view returns (string memory);
 
     /**
      * @notice module:core
-     * @dev Version of the governor instance (used in building the EIP-712 domain separator). Default: "1"
+     * @dev Version of the governor instance (used in building the ERC712 domain separator). Default: "1"
      */
     function version() external view returns (string memory);
 
@@ -203,9 +195,7 @@ interface IGovernor is IERC165, IERC6372 {
 
     /**
      * @notice module:core
-     * @dev Hashing function used to (re)build the proposal id from the proposal details.
-     *
-     * NOTE: For all off-chain and external calls, use {getProposalId}.
+     * @dev Hashing function used to (re)build the proposal id from the proposal details..
      */
     function hashProposal(
         address[] memory targets,
@@ -213,17 +203,6 @@ interface IGovernor is IERC165, IERC6372 {
         bytes[] memory calldatas,
         bytes32 descriptionHash
     ) external pure returns (uint256);
-
-    /**
-     * @notice module:core
-     * @dev Function used to get the proposal id from the proposal details.
-     */
-    function getProposalId(
-        address[] memory targets,
-        uint256[] memory values,
-        bytes[] memory calldatas,
-        bytes32 descriptionHash
-    ) external view returns (uint256);
 
     /**
      * @notice module:core
@@ -275,7 +254,7 @@ interface IGovernor is IERC165, IERC6372 {
     /**
      * @notice module:user-config
      * @dev Delay, between the proposal is created and the vote starts. The unit this duration is expressed in depends
-     * on the clock (see ERC-6372) this contract uses.
+     * on the clock (see EIP-6372) this contract uses.
      *
      * This can be increased to leave time for users to buy voting power, or delegate it, before the voting of a
      * proposal starts.
@@ -288,7 +267,7 @@ interface IGovernor is IERC165, IERC6372 {
     /**
      * @notice module:user-config
      * @dev Delay between the vote start and vote end. The unit this duration is expressed in depends on the clock
-     * (see ERC-6372) this contract uses.
+     * (see EIP-6372) this contract uses.
      *
      * NOTE: The {votingDelay} can delay the start of the vote. This must be considered when setting the voting
      * duration compared to the voting delay.
@@ -334,16 +313,10 @@ interface IGovernor is IERC165, IERC6372 {
     function hasVoted(uint256 proposalId, address account) external view returns (bool);
 
     /**
-     * @dev Create a new proposal. Vote starts after a delay specified by {IGovernor-votingDelay} and lasts for a
+     * @dev Create a new proposal. Vote start after a delay specified by {IGovernor-votingDelay} and lasts for a
      * duration specified by {IGovernor-votingPeriod}.
      *
      * Emits a {ProposalCreated} event.
-     *
-     * NOTE: The state of the Governor and `targets` may change between the proposal creation and its execution.
-     * This may be the result of third party actions on the targeted contracts, or other governor proposals.
-     * For example, the balance of this contract could be updated or its access control permissions may be modified,
-     * possibly compromising the proposal's ability to execute successfully (e.g. the governor doesn't have enough
-     * value to cover a proposal with multiple transfers).
      */
     function propose(
         address[] memory targets,

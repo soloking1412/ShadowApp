@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity ^0.8.22;
+pragma solidity ^0.8.20;
 
-import {UUPSUpgradeable} from "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
+import {UUPSUpgradeable} from "../../proxy/utils/UUPSUpgradeable.sol";
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
-import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
+import {Initializable} from "../../proxy/utils/Initializable.sol";
 
 contract NonUpgradeableMockUpgradeable is Initializable {
     uint256 internal _counter;
@@ -44,13 +44,13 @@ contract UUPSUpgradeableUnsafeMockUpgradeable is Initializable, UUPSUpgradeableM
     }
 }
 
-contract UUPSUnsupportedProxiableUUIDMockUpgradeable is Initializable, NonUpgradeableMockUpgradeable {
-    function __UUPSUnsupportedProxiableUUIDMock_init() internal onlyInitializing {
+contract UUPSUnsupportedProxiableUUIDUpgradeable is Initializable, UUPSUpgradeableMockUpgradeable {
+    function __UUPSUnsupportedProxiableUUID_init() internal onlyInitializing {
     }
 
-    function __UUPSUnsupportedProxiableUUIDMock_init_unchained() internal onlyInitializing {
+    function __UUPSUnsupportedProxiableUUID_init_unchained() internal onlyInitializing {
     }
-    function proxiableUUID() external pure returns (bytes32) {
+    function proxiableUUID() external pure override returns (bytes32) {
         return keccak256("invalid UUID");
     }
 }

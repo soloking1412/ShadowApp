@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Contracts (last updated v5.4.0) (governance/extensions/GovernorTimelockAccess.sol)
+// OpenZeppelin Contracts (last updated v5.0.0) (governance/extensions/GovernorTimelockAccess.sol)
 
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.20;
 
-import {IGovernor, Governor} from "../Governor.sol";
+import {Governor} from "../Governor.sol";
 import {AuthorityUtils} from "../../access/manager/AuthorityUtils.sol";
 import {IAccessManager} from "../../access/manager/IAccessManager.sol";
 import {Address} from "../../utils/Address.sol";
@@ -35,9 +35,6 @@ import {Time} from "../../utils/types/Time.sol";
  * mitigate this attack vector, the governor is able to ignore the restrictions claimed by the `AccessManager` using
  * {setAccessManagerIgnored}. While permanent denial of service is mitigated, temporary DoS may still be technically
  * possible. All of the governor's own functions (e.g., {setBaseDelaySeconds}) ignore the `AccessManager` by default.
- *
- * NOTE: `AccessManager` does not support scheduling more than one operation with the same target and calldata at
- * the same time. See {AccessManager-schedule} for a workaround.
  */
 abstract contract GovernorTimelockAccess is Governor {
     // An execution plan is produced at the moment a proposal is created, in order to fix at that point the exact
@@ -171,12 +168,16 @@ abstract contract GovernorTimelockAccess is Governor {
         return (delay, indirect, withDelay);
     }
 
-    /// @inheritdoc IGovernor
+    /**
+     * @dev See {IGovernor-proposalNeedsQueuing}.
+     */
     function proposalNeedsQueuing(uint256 proposalId) public view virtual override returns (bool) {
         return _executionPlan[proposalId].delay > 0;
     }
 
-    /// @inheritdoc IGovernor
+    /**
+     * @dev See {IGovernor-propose}
+     */
     function propose(
         address[] memory targets,
         uint256[] memory values,
@@ -233,9 +234,6 @@ abstract contract GovernorTimelockAccess is Governor {
         for (uint256 i = 0; i < targets.length; ++i) {
             (, bool withDelay, ) = _getManagerData(plan, i);
             if (withDelay) {
-                // This function can reenter when calling `_manager.schedule` before performing state updates in `_setManagerData`.
-                // However, the `manager` is a trusted contract in the current context's security model (e.g. an `AccessManager`).
-                // slither-disable-next-line reentrancy-no-eth
                 (, uint32 nonce) = _manager.schedule(targets[i], calldatas[i], etaSeconds);
                 _setManagerData(plan, i, true, nonce);
             }
@@ -275,7 +273,9 @@ abstract contract GovernorTimelockAccess is Governor {
         }
     }
 
-    /// @inheritdoc Governor
+    /**
+     * @dev See {IGovernor-_cancel}
+     */
     function _cancel(
         address[] memory targets,
         uint256[] memory values,

@@ -3,7 +3,7 @@
 pragma solidity ^0.8.20;
 
 import {ERC20Upgradeable} from "../../token/ERC20/ERC20Upgradeable.sol";
-import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
+import {Initializable} from "../../proxy/utils/Initializable.sol";
 
 abstract contract ERC20NoReturnMockUpgradeable is Initializable, ERC20Upgradeable {
     function __ERC20NoReturnMock_init() internal onlyInitializing {
@@ -12,7 +12,6 @@ abstract contract ERC20NoReturnMockUpgradeable is Initializable, ERC20Upgradeabl
     function __ERC20NoReturnMock_init_unchained() internal onlyInitializing {
     }
     function transfer(address to, uint256 amount) public override returns (bool) {
-        // forge-lint: disable-next-line(erc20-unchecked-transfer)
         super.transfer(to, amount);
         assembly {
             return(0, 0)
@@ -20,7 +19,6 @@ abstract contract ERC20NoReturnMockUpgradeable is Initializable, ERC20Upgradeabl
     }
 
     function transferFrom(address from, address to, uint256 amount) public override returns (bool) {
-        // forge-lint: disable-next-line(erc20-unchecked-transfer)
         super.transferFrom(from, to, amount);
         assembly {
             return(0, 0)

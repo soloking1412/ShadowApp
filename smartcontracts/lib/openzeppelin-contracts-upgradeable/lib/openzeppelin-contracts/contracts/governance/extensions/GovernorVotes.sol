@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Contracts (last updated v5.4.0) (governance/extensions/GovernorVotes.sol)
+// OpenZeppelin Contracts (last updated v5.0.0) (governance/extensions/GovernorVotes.sol)
 
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.20;
 
 import {Governor} from "../Governor.sol";
 import {IVotes} from "../utils/IVotes.sol";
 import {IERC5805} from "../../interfaces/IERC5805.sol";
+import {SafeCast} from "../../utils/math/SafeCast.sol";
 import {Time} from "../../utils/types/Time.sol";
 
 /**
@@ -27,8 +28,8 @@ abstract contract GovernorVotes is Governor {
     }
 
     /**
-     * @dev Clock (as specified in ERC-6372) is set to match the token's clock. Fallback to block numbers if the token
-     * does not implement ERC-6372.
+     * @dev Clock (as specified in EIP-6372) is set to match the token's clock. Fallback to block numbers if the token
+     * does not implement EIP-6372.
      */
     function clock() public view virtual override returns (uint48) {
         try token().clock() returns (uint48 timepoint) {
@@ -39,7 +40,7 @@ abstract contract GovernorVotes is Governor {
     }
 
     /**
-     * @dev Machine-readable description of the clock as specified in ERC-6372.
+     * @dev Machine-readable description of the clock as specified in EIP-6372.
      */
     // solhint-disable-next-line func-name-mixedcase
     function CLOCK_MODE() public view virtual override returns (string memory) {

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Contracts (last updated v5.5.0) (utils/types/Time.sol)
+// OpenZeppelin Contracts (last updated v5.0.0) (utils/types/Time.sol)
 
 pragma solidity ^0.8.20;
 
@@ -37,7 +37,7 @@ library Time {
     // ==================================================== Delay =====================================================
     /**
      * @dev A `Delay` is a uint32 duration that can be programmed to change value automatically at a given point in the
-     * future. The "effect" timepoint describes when the transition happens from the "old" value to the "new" value.
+     * future. The "effect" timepoint describes when the transitions happens from the "old" value to the "new" value.
      * This allows updating the delay applied to some operation while keeping some guarantees.
      *
      * In particular, the {update} function guarantees that if the delay is reduced, the old delay still applies for
@@ -71,11 +71,8 @@ library Time {
      * @dev Get the value at a given timepoint plus the pending value and effect timepoint if there is a scheduled
      * change after this timepoint. If the effect timepoint is 0, then the pending value should not be considered.
      */
-    function _getFullAt(
-        Delay self,
-        uint48 timepoint
-    ) private pure returns (uint32 valueBefore, uint32 valueAfter, uint48 effect) {
-        (valueBefore, valueAfter, effect) = self.unpack();
+    function _getFullAt(Delay self, uint48 timepoint) private pure returns (uint32, uint32, uint48) {
+        (uint32 valueBefore, uint32 valueAfter, uint48 effect) = self.unpack();
         return effect <= timepoint ? (valueAfter, 0, 0) : (valueBefore, valueAfter, effect);
     }
 
@@ -83,7 +80,7 @@ library Time {
      * @dev Get the current value plus the pending value and effect timepoint if there is a scheduled change. If the
      * effect timepoint is 0, then the pending value should not be considered.
      */
-    function getFull(Delay self) internal view returns (uint32 valueBefore, uint32 valueAfter, uint48 effect) {
+    function getFull(Delay self) internal view returns (uint32, uint32, uint48) {
         return _getFullAt(self, timestamp());
     }
 

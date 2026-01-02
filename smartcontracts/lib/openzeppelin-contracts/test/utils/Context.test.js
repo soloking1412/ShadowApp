@@ -1,18 +1,17 @@
-const { ethers } = require('hardhat');
-const { loadFixture } = require('@nomicfoundation/hardhat-network-helpers');
+require('@openzeppelin/test-helpers');
+
+const ContextMock = artifacts.require('ContextMock');
+const ContextMockCaller = artifacts.require('ContextMockCaller');
 
 const { shouldBehaveLikeRegularContext } = require('./Context.behavior');
 
-async function fixture() {
-  const [sender] = await ethers.getSigners();
-  const context = await ethers.deployContract('ContextMock', []);
-  return { sender, context };
-}
+contract('Context', function (accounts) {
+  const [sender] = accounts;
 
-describe('Context', function () {
   beforeEach(async function () {
-    Object.assign(this, await loadFixture(fixture));
+    this.context = await ContextMock.new();
+    this.caller = await ContextMockCaller.new();
   });
 
-  shouldBehaveLikeRegularContext();
+  shouldBehaveLikeRegularContext(sender);
 });

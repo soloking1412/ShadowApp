@@ -12,7 +12,7 @@ contract TimelockReentrant {
         _reentered = true;
     }
 
-    function enableReentrancy(address target, bytes calldata data) external {
+    function enableRentrancy(address target, bytes calldata data) external {
         _reenterTarget = target;
         _reenterData = data;
     }

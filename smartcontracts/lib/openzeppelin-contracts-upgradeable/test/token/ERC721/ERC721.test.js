@@ -1,23 +1,15 @@
-const { ethers } = require('hardhat');
-const { loadFixture } = require('@nomicfoundation/hardhat-network-helpers');
-
 const { shouldBehaveLikeERC721, shouldBehaveLikeERC721Metadata } = require('./ERC721.behavior');
 
-const name = 'Non Fungible Token';
-const symbol = 'NFT';
+const ERC721 = artifacts.require('$ERC721');
 
-async function fixture() {
-  return {
-    accounts: await ethers.getSigners(),
-    token: await ethers.deployContract('$ERC721', [name, symbol]),
-  };
-}
+contract('ERC721', function (accounts) {
+  const name = 'Non Fungible Token';
+  const symbol = 'NFT';
 
-describe('ERC721', function () {
   beforeEach(async function () {
-    Object.assign(this, await loadFixture(fixture));
+    this.token = await ERC721.new(name, symbol);
   });
 
-  shouldBehaveLikeERC721();
-  shouldBehaveLikeERC721Metadata(name, symbol);
+  shouldBehaveLikeERC721(...accounts);
+  shouldBehaveLikeERC721Metadata(name, symbol, ...accounts);
 });

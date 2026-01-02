@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Contracts (last updated v5.5.0) (token/ERC1155/extensions/ERC1155Pausable.sol)
+// OpenZeppelin Contracts (last updated v5.0.0) (token/ERC1155/extensions/ERC1155Pausable.sol)
 
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.20;
 
 import {ERC1155Upgradeable} from "../ERC1155Upgradeable.sol";
 import {PausableUpgradeable} from "../../../utils/PausableUpgradeable.sol";
-import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
+import {Initializable} from "../../../proxy/utils/Initializable.sol";
 
 /**
- * @dev ERC-1155 token with pausable token transfers, minting and burning.
+ * @dev ERC1155 token with pausable token transfers, minting and burning.
  *
  * Useful for scenarios such as preventing trades until the end of an evaluation
  * period, or having an emergency switch for freezing all token transfers in the
@@ -22,6 +22,7 @@ import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.s
  */
 abstract contract ERC1155PausableUpgradeable is Initializable, ERC1155Upgradeable, PausableUpgradeable {
     function __ERC1155Pausable_init() internal onlyInitializing {
+        __Pausable_init_unchained();
     }
 
     function __ERC1155Pausable_init_unchained() internal onlyInitializing {

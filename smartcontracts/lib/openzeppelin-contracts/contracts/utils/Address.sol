@@ -1,19 +1,26 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Contracts (last updated v5.5.0) (utils/Address.sol)
+// OpenZeppelin Contracts (last updated v5.0.0) (utils/Address.sol)
 
 pragma solidity ^0.8.20;
-
-import {Errors} from "./Errors.sol";
-import {LowLevelCall} from "./LowLevelCall.sol";
 
 /**
  * @dev Collection of functions related to the address type
  */
 library Address {
     /**
+     * @dev The ETH balance of the account is not enough to perform the operation.
+     */
+    error AddressInsufficientBalance(address account);
+
+    /**
      * @dev There's no code at `target` (it is not a contract).
      */
     error AddressEmptyCode(address target);
+
+    /**
+     * @dev A call to an address target failed. The target may have reverted.
+     */
+    error FailedInnerCall();
 
     /**
      * @dev Replacement for Solidity's `transfer`: sends `amount` wei to
@@ -33,15 +40,12 @@ library Address {
      */
     function sendValue(address payable recipient, uint256 amount) internal {
         if (address(this).balance < amount) {
-            revert Errors.InsufficientBalance(address(this).balance, amount);
+            revert AddressInsufficientBalance(address(this));
         }
-        if (LowLevelCall.callNoReturn(recipient, amount, "")) {
-            // call successful, nothing to do
-            return;
-        } else if (LowLevelCall.returnDataSize() > 0) {
-            LowLevelCall.bubbleRevert();
-        } else {
-            revert Errors.FailedCall();
+
+        (bool success, ) = recipient.call{value: amount}("");
+        if (!success) {
+            revert FailedInnerCall();
         }
     }
 
@@ -53,7 +57,7 @@ library Address {
      * If `target` reverts with a revert reason or custom error, it is bubbled
      * up by this function (like regular Solidity function calls). However, if
      * the call reverted with no returned reason, this function reverts with a
-     * {Errors.FailedCall} error.
+     * {FailedInnerCall} error.
      *
      * Returns the raw returned data. To convert to the expected return value,
      * use https://solidity.readthedocs.io/en/latest/units-and-global-variables.html?highlight=abi.decode#abi-encoding-and-decoding-functions[`abi.decode`].
@@ -78,18 +82,10 @@ library Address {
      */
     function functionCallWithValue(address target, bytes memory data, uint256 value) internal returns (bytes memory) {
         if (address(this).balance < value) {
-            revert Errors.InsufficientBalance(address(this).balance, value);
+            revert AddressInsufficientBalance(address(this));
         }
-        bool success = LowLevelCall.callNoReturn(target, value, data);
-        if (success && (LowLevelCall.returnDataSize() > 0 || target.code.length > 0)) {
-            return LowLevelCall.returnData();
-        } else if (success) {
-            revert AddressEmptyCode(target);
-        } else if (LowLevelCall.returnDataSize() > 0) {
-            LowLevelCall.bubbleRevert();
-        } else {
-            revert Errors.FailedCall();
-        }
+        (bool success, bytes memory returndata) = target.call{value: value}(data);
+        return verifyCallResultFromTarget(target, success, returndata);
     }
 
     /**
@@ -97,16 +93,8 @@ library Address {
      * but performing a static call.
      */
     function functionStaticCall(address target, bytes memory data) internal view returns (bytes memory) {
-        bool success = LowLevelCall.staticcallNoReturn(target, data);
-        if (success && (LowLevelCall.returnDataSize() > 0 || target.code.length > 0)) {
-            return LowLevelCall.returnData();
-        } else if (success) {
-            revert AddressEmptyCode(target);
-        } else if (LowLevelCall.returnDataSize() > 0) {
-            LowLevelCall.bubbleRevert();
-        } else {
-            revert Errors.FailedCall();
-        }
+        (bool success, bytes memory returndata) = target.staticcall(data);
+        return verifyCallResultFromTarget(target, success, returndata);
     }
 
     /**
@@ -114,54 +102,58 @@ library Address {
      * but performing a delegate call.
      */
     function functionDelegateCall(address target, bytes memory data) internal returns (bytes memory) {
-        bool success = LowLevelCall.delegatecallNoReturn(target, data);
-        if (success && (LowLevelCall.returnDataSize() > 0 || target.code.length > 0)) {
-            return LowLevelCall.returnData();
-        } else if (success) {
-            revert AddressEmptyCode(target);
-        } else if (LowLevelCall.returnDataSize() > 0) {
-            LowLevelCall.bubbleRevert();
-        } else {
-            revert Errors.FailedCall();
-        }
+        (bool success, bytes memory returndata) = target.delegatecall(data);
+        return verifyCallResultFromTarget(target, success, returndata);
     }
 
     /**
      * @dev Tool to verify that a low level call to smart-contract was successful, and reverts if the target
-     * was not a contract or bubbling up the revert reason (falling back to {Errors.FailedCall}) in case
-     * of an unsuccessful call.
-     *
-     * NOTE: This function is DEPRECATED and may be removed in the next major release.
+     * was not a contract or bubbling up the revert reason (falling back to {FailedInnerCall}) in case of an
+     * unsuccessful call.
      */
     function verifyCallResultFromTarget(
         address target,
         bool success,
         bytes memory returndata
     ) internal view returns (bytes memory) {
-        // only check if target is a contract if the call was successful and the return data is empty
-        // otherwise we already know that it was a contract
-        if (success && (returndata.length > 0 || target.code.length > 0)) {
-            return returndata;
-        } else if (success) {
-            revert AddressEmptyCode(target);
-        } else if (returndata.length > 0) {
-            LowLevelCall.bubbleRevert(returndata);
+        if (!success) {
+            _revert(returndata);
         } else {
-            revert Errors.FailedCall();
+            // only check if target is a contract if the call was successful and the return data is empty
+            // otherwise we already know that it was a contract
+            if (returndata.length == 0 && target.code.length == 0) {
+                revert AddressEmptyCode(target);
+            }
+            return returndata;
         }
     }
 
     /**
      * @dev Tool to verify that a low level call was successful, and reverts if it wasn't, either by bubbling the
-     * revert reason or with a default {Errors.FailedCall} error.
+     * revert reason or with a default {FailedInnerCall} error.
      */
     function verifyCallResult(bool success, bytes memory returndata) internal pure returns (bytes memory) {
-        if (success) {
-            return returndata;
-        } else if (returndata.length > 0) {
-            LowLevelCall.bubbleRevert(returndata);
+        if (!success) {
+            _revert(returndata);
         } else {
-            revert Errors.FailedCall();
+            return returndata;
+        }
+    }
+
+    /**
+     * @dev Reverts with returndata if present. Otherwise reverts with {FailedInnerCall}.
+     */
+    function _revert(bytes memory returndata) private pure {
+        // Look for revert reason and bubble it up if present
+        if (returndata.length > 0) {
+            // The easiest way to bubble the revert reason is using memory via assembly
+            /// @solidity memory-safe-assembly
+            assembly {
+                let returndata_size := mload(returndata)
+                revert(add(32, returndata), returndata_size)
+            }
+        } else {
+            revert FailedInnerCall();
         }
     }
 }

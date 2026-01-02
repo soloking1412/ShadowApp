@@ -1,5 +1,14 @@
 const format = require('../format-lines');
-const { TYPES } = require('./Slot.opts');
+const { capitalize } = require('../../helpers');
+
+const TYPES = [
+  { type: 'address', isValueType: true },
+  { type: 'bool', isValueType: true, name: 'Boolean' },
+  { type: 'bytes32', isValueType: true },
+  { type: 'uint256', isValueType: true },
+  { type: 'string', isValueType: false },
+  { type: 'bytes', isValueType: false },
+].map(type => Object.assign(type, { struct: (type.name ?? capitalize(type.type)) + 'Slot' }));
 
 const header = `\
 pragma solidity ^0.8.20;
@@ -12,10 +21,9 @@ pragma solidity ^0.8.20;
  *
  * The functions in this library return Slot structs that contain a \`value\` member that can be used to read or write.
  *
- * Example usage to set ERC-1967 implementation slot:
+ * Example usage to set ERC1967 implementation slot:
  * \`\`\`solidity
  * contract ERC1967 {
- *     // Define the slot. Alternatively, use the SlotDerivation library to derive the slot.
  *     bytes32 internal constant _IMPLEMENTATION_SLOT = 0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
  *
  *     function _getImplementation() internal view returns (address) {
@@ -28,38 +36,36 @@ pragma solidity ^0.8.20;
  *     }
  * }
  * \`\`\`
- *
- * TIP: Consider using this library along with {SlotDerivation}.
  */
 `;
 
-const struct = ({ type, name }) => `\
-struct ${name}Slot {
-    ${type} value;
+const struct = type => `\
+struct ${type.struct} {
+  ${type.type} value;
 }
 `;
 
-const get = ({ name }) => `\
+const get = type => `\
 /**
- * @dev Returns ${
-   name.toLowerCase().startsWith('a') ? 'an' : 'a'
- } \`${name}Slot\` with member \`value\` located at \`slot\`.
+ * @dev Returns an \`${type.struct}\` with member \`value\` located at \`slot\`.
  */
-function get${name}Slot(bytes32 slot) internal pure returns (${name}Slot storage r) {
-    assembly ("memory-safe") {
-        r.slot := slot
-    }
+function get${type.struct}(bytes32 slot) internal pure returns (${type.struct} storage r) {
+  /// @solidity memory-safe-assembly
+  assembly {
+      r.slot := slot
+  }
 }
 `;
 
-const getStorage = ({ type, name }) => `\
+const getStorage = type => `\
 /**
- * @dev Returns an \`${name}Slot\` representation of the ${type} storage pointer \`store\`.
+ * @dev Returns an \`${type.struct}\` representation of the ${type.type} storage pointer \`store\`.
  */
-function get${name}Slot(${type} storage store) internal pure returns (${name}Slot storage r) {
-    assembly ("memory-safe") {
-        r.slot := store.slot
-    }
+function get${type.struct}(${type.type} storage store) internal pure returns (${type.struct} storage r) {
+  /// @solidity memory-safe-assembly
+  assembly {
+      r.slot := store.slot
+  }
 }
 `;
 
@@ -67,11 +73,6 @@ function get${name}Slot(${type} storage store) internal pure returns (${name}Slo
 module.exports = format(
   header.trimEnd(),
   'library StorageSlot {',
-  format(
-    [].concat(
-      TYPES.map(type => struct(type)),
-      TYPES.flatMap(type => [get(type), !type.isValueType && getStorage(type)].filter(Boolean)),
-    ),
-  ).trimEnd(),
+  [...TYPES.map(struct), ...TYPES.flatMap(type => [get(type), type.isValueType ? '' : getStorage(type)])],
   '}',
 );

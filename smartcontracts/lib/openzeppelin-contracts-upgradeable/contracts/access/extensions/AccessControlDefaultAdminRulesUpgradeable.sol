@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Contracts (last updated v5.5.0) (access/extensions/AccessControlDefaultAdminRules.sol)
+// OpenZeppelin Contracts (last updated v5.0.0) (access/extensions/AccessControlDefaultAdminRules.sol)
 
 pragma solidity ^0.8.20;
 
@@ -9,8 +9,7 @@ import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol"
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IERC5313} from "@openzeppelin/contracts/interfaces/IERC5313.sol";
-import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
+import {Initializable} from "../../proxy/utils/Initializable.sol";
 
 /**
  * @dev Extension of {AccessControl} that allows specifying special rules to manage
@@ -26,7 +25,6 @@ import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.s
  * * Enforces a 2-step process to transfer the `DEFAULT_ADMIN_ROLE` to another account.
  * * Enforces a configurable delay between the two steps, with the ability to cancel before the transfer is accepted.
  * * The delay can be changed by scheduling, see {changeDefaultAdminDelay}.
- * * Role transfers must wait at least one block after scheduling before it can be accepted.
  * * It is not possible to use another role to manage the `DEFAULT_ADMIN_ROLE`.
  *
  * Example usage:
@@ -80,12 +78,16 @@ abstract contract AccessControlDefaultAdminRulesUpgradeable is Initializable, IA
         _grantRole(DEFAULT_ADMIN_ROLE, initialDefaultAdmin);
     }
 
-    /// @inheritdoc IERC165
+    /**
+     * @dev See {IERC165-supportsInterface}.
+     */
     function supportsInterface(bytes4 interfaceId) public view virtual override returns (bool) {
         return interfaceId == type(IAccessControlDefaultAdminRules).interfaceId || super.supportsInterface(interfaceId);
     }
 
-    /// @inheritdoc IERC5313
+    /**
+     * @dev See {IERC5313-owner}.
+     */
     function owner() public view virtual returns (address) {
         return defaultAdmin();
     }
@@ -159,7 +161,9 @@ abstract contract AccessControlDefaultAdminRulesUpgradeable is Initializable, IA
         return super._grantRole(role, account);
     }
 
-    /// @inheritdoc AccessControlUpgradeable
+    /**
+     * @dev See {AccessControl-_revokeRole}.
+     */
     function _revokeRole(bytes32 role, address account) internal virtual override returns (bool) {
         AccessControlDefaultAdminRulesStorage storage $ = _getAccessControlDefaultAdminRulesStorage();
         if (role == DEFAULT_ADMIN_ROLE && account == defaultAdmin()) {
@@ -182,33 +186,43 @@ abstract contract AccessControlDefaultAdminRulesUpgradeable is Initializable, IA
     /// AccessControlDefaultAdminRules accessors
     ///
 
-    /// @inheritdoc IAccessControlDefaultAdminRules
+    /**
+     * @inheritdoc IAccessControlDefaultAdminRules
+     */
     function defaultAdmin() public view virtual returns (address) {
         AccessControlDefaultAdminRulesStorage storage $ = _getAccessControlDefaultAdminRulesStorage();
         return $._currentDefaultAdmin;
     }
 
-    /// @inheritdoc IAccessControlDefaultAdminRules
+    /**
+     * @inheritdoc IAccessControlDefaultAdminRules
+     */
     function pendingDefaultAdmin() public view virtual returns (address newAdmin, uint48 schedule) {
         AccessControlDefaultAdminRulesStorage storage $ = _getAccessControlDefaultAdminRulesStorage();
         return ($._pendingDefaultAdmin, $._pendingDefaultAdminSchedule);
     }
 
-    /// @inheritdoc IAccessControlDefaultAdminRules
+    /**
+     * @inheritdoc IAccessControlDefaultAdminRules
+     */
     function defaultAdminDelay() public view virtual returns (uint48) {
         AccessControlDefaultAdminRulesStorage storage $ = _getAccessControlDefaultAdminRulesStorage();
         uint48 schedule = $._pendingDelaySchedule;
         return (_isScheduleSet(schedule) && _hasSchedulePassed(schedule)) ? $._pendingDelay : $._currentDelay;
     }
 
-    /// @inheritdoc IAccessControlDefaultAdminRules
+    /**
+     * @inheritdoc IAccessControlDefaultAdminRules
+     */
     function pendingDefaultAdminDelay() public view virtual returns (uint48 newDelay, uint48 schedule) {
         AccessControlDefaultAdminRulesStorage storage $ = _getAccessControlDefaultAdminRulesStorage();
         schedule = $._pendingDelaySchedule;
         return (_isScheduleSet(schedule) && !_hasSchedulePassed(schedule)) ? ($._pendingDelay, schedule) : (0, 0);
     }
 
-    /// @inheritdoc IAccessControlDefaultAdminRules
+    /**
+     * @inheritdoc IAccessControlDefaultAdminRules
+     */
     function defaultAdminDelayIncreaseWait() public view virtual returns (uint48) {
         return 5 days;
     }
@@ -217,7 +231,9 @@ abstract contract AccessControlDefaultAdminRulesUpgradeable is Initializable, IA
     /// AccessControlDefaultAdminRules public and internal setters for defaultAdmin/pendingDefaultAdmin
     ///
 
-    /// @inheritdoc IAccessControlDefaultAdminRules
+    /**
+     * @inheritdoc IAccessControlDefaultAdminRules
+     */
     function beginDefaultAdminTransfer(address newAdmin) public virtual onlyRole(DEFAULT_ADMIN_ROLE) {
         _beginDefaultAdminTransfer(newAdmin);
     }
@@ -233,7 +249,9 @@ abstract contract AccessControlDefaultAdminRulesUpgradeable is Initializable, IA
         emit DefaultAdminTransferScheduled(newAdmin, newSchedule);
     }
 
-    /// @inheritdoc IAccessControlDefaultAdminRules
+    /**
+     * @inheritdoc IAccessControlDefaultAdminRules
+     */
     function cancelDefaultAdminTransfer() public virtual onlyRole(DEFAULT_ADMIN_ROLE) {
         _cancelDefaultAdminTransfer();
     }
@@ -247,7 +265,9 @@ abstract contract AccessControlDefaultAdminRulesUpgradeable is Initializable, IA
         _setPendingDefaultAdmin(address(0), 0);
     }
 
-    /// @inheritdoc IAccessControlDefaultAdminRules
+    /**
+     * @inheritdoc IAccessControlDefaultAdminRules
+     */
     function acceptDefaultAdminTransfer() public virtual {
         (address newDefaultAdmin, ) = pendingDefaultAdmin();
         if (_msgSender() != newDefaultAdmin) {
@@ -278,7 +298,9 @@ abstract contract AccessControlDefaultAdminRulesUpgradeable is Initializable, IA
     /// AccessControlDefaultAdminRules public and internal setters for defaultAdminDelay/pendingDefaultAdminDelay
     ///
 
-    /// @inheritdoc IAccessControlDefaultAdminRules
+    /**
+     * @inheritdoc IAccessControlDefaultAdminRules
+     */
     function changeDefaultAdminDelay(uint48 newDelay) public virtual onlyRole(DEFAULT_ADMIN_ROLE) {
         _changeDefaultAdminDelay(newDelay);
     }
@@ -294,7 +316,9 @@ abstract contract AccessControlDefaultAdminRulesUpgradeable is Initializable, IA
         emit DefaultAdminDelayChangeScheduled(newDelay, newSchedule);
     }
 
-    /// @inheritdoc IAccessControlDefaultAdminRules
+    /**
+     * @inheritdoc IAccessControlDefaultAdminRules
+     */
     function rollbackDefaultAdminDelay() public virtual onlyRole(DEFAULT_ADMIN_ROLE) {
         _rollbackDefaultAdminDelay();
     }
@@ -386,14 +410,14 @@ abstract contract AccessControlDefaultAdminRulesUpgradeable is Initializable, IA
     ///
 
     /**
-     * @dev Defines if a `schedule` is considered set. For consistency purposes.
+     * @dev Defines if an `schedule` is considered set. For consistency purposes.
      */
     function _isScheduleSet(uint48 schedule) private pure returns (bool) {
         return schedule != 0;
     }
 
     /**
-     * @dev Defines if a `schedule` is considered passed. For consistency purposes.
+     * @dev Defines if an `schedule` is considered passed. For consistency purposes.
      */
     function _hasSchedulePassed(uint48 schedule) private view returns (bool) {
         return schedule < block.timestamp;

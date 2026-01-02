@@ -7,31 +7,33 @@ const header = `\
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
-import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
-import {Checkpoints} from "@openzeppelin/contracts/utils/structs/Checkpoints.sol";
+import {SafeCast} from "../../../contracts/utils/math/SafeCast.sol";
+import {Checkpoints} from "../../../contracts/utils/structs/Checkpoints.sol";
 `;
 
+/* eslint-disable max-len */
 const template = opts => `\
 using Checkpoints for Checkpoints.${opts.historyTypeName};
 
-// Maximum gap between keys used during the fuzzing tests: the \`_prepareKeys\` function will make sure that
+// Maximum gap between keys used during the fuzzing tests: the \`_prepareKeys\` function with make sure that
 // key#n+1 is in the [key#n, key#n + _KEY_MAX_GAP] range.
 uint8 internal constant _KEY_MAX_GAP = 64;
 
 Checkpoints.${opts.historyTypeName} internal _ckpts;
 
 // helpers
-function _bound${capitalize(opts.keyTypeName)}(${opts.keyTypeName} x, ${opts.keyTypeName} min, ${
-  opts.keyTypeName
-} max) internal pure returns (${opts.keyTypeName}) {
-    return ${
-      opts.keyTypeName === 'uint256'
-        ? 'bound(x, min, max)'
-        : `SafeCast.to${capitalize(opts.keyTypeName)}(bound(uint256(x), uint256(min), uint256(max)))`
-    };
+function _bound${capitalize(opts.keyTypeName)}(
+    ${opts.keyTypeName} x,
+    ${opts.keyTypeName} min,
+    ${opts.keyTypeName} max
+) internal view returns (${opts.keyTypeName}) {
+    return SafeCast.to${capitalize(opts.keyTypeName)}(bound(uint256(x), uint256(min), uint256(max)));
 }
 
-function _prepareKeys(${opts.keyTypeName}[] memory keys, ${opts.keyTypeName} maxSpread) internal pure {
+function _prepareKeys(
+    ${opts.keyTypeName}[] memory keys,
+    ${opts.keyTypeName} maxSpread
+) internal view {
     ${opts.keyTypeName} lastKey = 0;
     for (uint256 i = 0; i < keys.length; ++i) {
         ${opts.keyTypeName} key = _bound${capitalize(opts.keyTypeName)}(keys[i], lastKey, lastKey + maxSpread);
@@ -40,7 +42,11 @@ function _prepareKeys(${opts.keyTypeName}[] memory keys, ${opts.keyTypeName} max
     }
 }
 
-function _assertLatestCheckpoint(bool exist, ${opts.keyTypeName} key, ${opts.valueTypeName} value) internal view {
+function _assertLatestCheckpoint(
+    bool exist,
+    ${opts.keyTypeName} key,
+    ${opts.valueTypeName} value
+) internal {
     (bool _exist, ${opts.keyTypeName} _key, ${opts.valueTypeName} _value) = _ckpts.latestCheckpoint();
     assertEq(_exist, exist);
     assertEq(_key, key);
@@ -48,9 +54,11 @@ function _assertLatestCheckpoint(bool exist, ${opts.keyTypeName} key, ${opts.val
 }
 
 // tests
-function testPush(${opts.keyTypeName}[] memory keys, ${opts.valueTypeName}[] memory values, ${
-  opts.keyTypeName
-} pastKey) public {
+function testPush(
+    ${opts.keyTypeName}[] memory keys,
+    ${opts.valueTypeName}[] memory values,
+    ${opts.keyTypeName} pastKey
+) public {
     vm.assume(values.length > 0 && values.length <= keys.length);
     _prepareKeys(keys, _KEY_MAX_GAP);
 
@@ -63,7 +71,7 @@ function testPush(${opts.keyTypeName}[] memory keys, ${opts.valueTypeName}[] mem
     for (uint256 i = 0; i < keys.length; ++i) {
         ${opts.keyTypeName} key = keys[i];
         ${opts.valueTypeName} value = values[i % values.length];
-        if (i > 0 && key == keys[i - 1]) ++duplicates;
+        if (i > 0 && key == keys[i-1]) ++duplicates;
 
         // push
         _ckpts.push(key, value);
@@ -87,12 +95,14 @@ function testPush(${opts.keyTypeName}[] memory keys, ${opts.valueTypeName}[] mem
 
 // used to test reverts
 function push(${opts.keyTypeName} key, ${opts.valueTypeName} value) external {
-    _ckpts.push(key, value);
+  _ckpts.push(key, value);
 }
 
-function testLookup(${opts.keyTypeName}[] memory keys, ${opts.valueTypeName}[] memory values, ${
-  opts.keyTypeName
-} lookup) public {
+function testLookup(
+    ${opts.keyTypeName}[] memory keys,
+    ${opts.valueTypeName}[] memory values,
+    ${opts.keyTypeName} lookup
+) public {
     vm.assume(values.length > 0 && values.length <= keys.length);
     _prepareKeys(keys, _KEY_MAX_GAP);
 
@@ -114,7 +124,7 @@ function testLookup(${opts.keyTypeName}[] memory keys, ${opts.valueTypeName}[] m
             upper = value;
         }
         // find the first key that is not smaller than the lookup key
-        if (key >= lookup && (i == 0 || keys[i - 1] < lookup)) {
+        if (key >= lookup && (i == 0 || keys[i-1] < lookup)) {
             lowerKey = key;
         }
         if (key == lowerKey) {
@@ -132,10 +142,5 @@ function testLookup(${opts.keyTypeName}[] memory keys, ${opts.valueTypeName}[] m
 // GENERATE
 module.exports = format(
   header,
-  ...OPTS.flatMap(opts => [
-    `contract Checkpoints${opts.historyTypeName}Test is Test {`,
-    [template(opts).trimEnd()],
-    '}',
-    '',
-  ]),
+  ...OPTS.flatMap(opts => [`contract Checkpoints${opts.historyTypeName}Test is Test {`, [template(opts)], '}']),
 );

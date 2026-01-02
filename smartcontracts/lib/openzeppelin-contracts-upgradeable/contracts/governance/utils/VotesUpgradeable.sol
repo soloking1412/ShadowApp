@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Contracts (last updated v5.5.0) (governance/utils/Votes.sol)
-
-pragma solidity ^0.8.24;
+// OpenZeppelin Contracts (last updated v5.0.0) (governance/utils/Votes.sol)
+pragma solidity ^0.8.20;
 
 import {IERC5805} from "@openzeppelin/contracts/interfaces/IERC5805.sol";
 import {ContextUpgradeable} from "../../utils/ContextUpgradeable.sol";
@@ -11,7 +10,7 @@ import {Checkpoints} from "@openzeppelin/contracts/utils/structs/Checkpoints.sol
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import {Time} from "@openzeppelin/contracts/utils/types/Time.sol";
-import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
+import {Initializable} from "../../proxy/utils/Initializable.sol";
 
 /**
  * @dev This is a base abstract contract that tracks voting units, which are a measure of voting power that can be
@@ -79,7 +78,7 @@ abstract contract VotesUpgradeable is Initializable, ContextUpgradeable, EIP712U
     }
 
     /**
-     * @dev Machine-readable description of the clock as specified in ERC-6372.
+     * @dev Machine-readable description of the clock as specified in EIP-6372.
      */
     // solhint-disable-next-line func-name-mixedcase
     function CLOCK_MODE() public view virtual returns (string memory) {
@@ -88,15 +87,6 @@ abstract contract VotesUpgradeable is Initializable, ContextUpgradeable, EIP712U
             revert ERC6372InconsistentClock();
         }
         return "mode=blocknumber&from=default";
-    }
-
-    /**
-     * @dev Validate that a timepoint is in the past, and return it as a uint48.
-     */
-    function _validateTimepoint(uint256 timepoint) internal view returns (uint48) {
-        uint48 currentTimepoint = clock();
-        if (timepoint >= currentTimepoint) revert ERC5805FutureLookup(timepoint, currentTimepoint);
-        return SafeCast.toUint48(timepoint);
     }
 
     /**
@@ -117,7 +107,11 @@ abstract contract VotesUpgradeable is Initializable, ContextUpgradeable, EIP712U
      */
     function getPastVotes(address account, uint256 timepoint) public view virtual returns (uint256) {
         VotesStorage storage $ = _getVotesStorage();
-        return $._delegateCheckpoints[account].upperLookupRecent(_validateTimepoint(timepoint));
+        uint48 currentTimepoint = clock();
+        if (timepoint >= currentTimepoint) {
+            revert ERC5805FutureLookup(timepoint, currentTimepoint);
+        }
+        return $._delegateCheckpoints[account].upperLookupRecent(SafeCast.toUint48(timepoint));
     }
 
     /**
@@ -134,7 +128,11 @@ abstract contract VotesUpgradeable is Initializable, ContextUpgradeable, EIP712U
      */
     function getPastTotalSupply(uint256 timepoint) public view virtual returns (uint256) {
         VotesStorage storage $ = _getVotesStorage();
-        return $._totalCheckpoints.upperLookupRecent(_validateTimepoint(timepoint));
+        uint48 currentTimepoint = clock();
+        if (timepoint >= currentTimepoint) {
+            revert ERC5805FutureLookup(timepoint, currentTimepoint);
+        }
+        return $._totalCheckpoints.upperLookupRecent(SafeCast.toUint48(timepoint));
     }
 
     /**
@@ -217,7 +215,7 @@ abstract contract VotesUpgradeable is Initializable, ContextUpgradeable, EIP712U
     /**
      * @dev Moves delegated votes from one delegate to another.
      */
-    function _moveDelegateVotes(address from, address to, uint256 amount) internal virtual {
+    function _moveDelegateVotes(address from, address to, uint256 amount) private {
         VotesStorage storage $ = _getVotesStorage();
         if (from != to && amount > 0) {
             if (from != address(0)) {
@@ -262,7 +260,7 @@ abstract contract VotesUpgradeable is Initializable, ContextUpgradeable, EIP712U
         Checkpoints.Trace208 storage store,
         function(uint208, uint208) view returns (uint208) op,
         uint208 delta
-    ) private returns (uint208 oldValue, uint208 newValue) {
+    ) private returns (uint208, uint208) {
         return store.push(clock(), op(store.latest(), delta));
     }
 

@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Contracts (last updated v5.5.0) (token/ERC1155/extensions/ERC1155Supply.sol)
+// OpenZeppelin Contracts (last updated v5.0.0) (token/ERC1155/extensions/ERC1155Supply.sol)
 
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.20;
 
 import {ERC1155} from "../ERC1155.sol";
-import {Arrays} from "../../../utils/Arrays.sol";
 
 /**
- * @dev Extension of ERC-1155 that adds tracking of total supply per id.
+ * @dev Extension of ERC1155 that adds tracking of total supply per id.
  *
  * Useful for scenarios where Fungible and Non-fungible tokens have to be
  * clearly identified. Note: While a totalSupply of 1 might mean the
@@ -20,8 +19,6 @@ import {Arrays} from "../../../utils/Arrays.sol";
  * CAUTION: This extension should not be added in an upgrade to an already deployed contract.
  */
 abstract contract ERC1155Supply is ERC1155 {
-    using Arrays for uint256[];
-
     mapping(uint256 id => uint256) private _totalSupply;
     uint256 private _totalSupplyAll;
 
@@ -46,7 +43,9 @@ abstract contract ERC1155Supply is ERC1155 {
         return totalSupply(id) > 0;
     }
 
-    /// @inheritdoc ERC1155
+    /**
+     * @dev See {ERC1155-_update}.
+     */
     function _update(
         address from,
         address to,
@@ -58,9 +57,9 @@ abstract contract ERC1155Supply is ERC1155 {
         if (from == address(0)) {
             uint256 totalMintValue = 0;
             for (uint256 i = 0; i < ids.length; ++i) {
-                uint256 value = values.unsafeMemoryAccess(i);
+                uint256 value = values[i];
                 // Overflow check required: The rest of the code assumes that totalSupply never overflows
-                _totalSupply[ids.unsafeMemoryAccess(i)] += value;
+                _totalSupply[ids[i]] += value;
                 totalMintValue += value;
             }
             // Overflow check required: The rest of the code assumes that totalSupplyAll never overflows
@@ -70,11 +69,11 @@ abstract contract ERC1155Supply is ERC1155 {
         if (to == address(0)) {
             uint256 totalBurnValue = 0;
             for (uint256 i = 0; i < ids.length; ++i) {
-                uint256 value = values.unsafeMemoryAccess(i);
+                uint256 value = values[i];
 
                 unchecked {
                     // Overflow not possible: values[i] <= balanceOf(from, ids[i]) <= totalSupply(ids[i])
-                    _totalSupply[ids.unsafeMemoryAccess(i)] -= value;
+                    _totalSupply[ids[i]] -= value;
                     // Overflow not possible: sum_i(values[i]) <= sum_i(totalSupply(ids[i])) <= totalSupplyAll
                     totalBurnValue += value;
                 }

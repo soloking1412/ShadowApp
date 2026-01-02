@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Contracts (last updated v5.4.0) (governance/extensions/GovernorSettings.sol)
+// OpenZeppelin Contracts (last updated v5.0.0) (governance/extensions/GovernorSettings.sol)
 
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.20;
 
-import {IGovernor} from "@openzeppelin/contracts/governance/IGovernor.sol";
 import {GovernorUpgradeable} from "../GovernorUpgradeable.sol";
-import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
+import {Initializable} from "../../proxy/utils/Initializable.sol";
 
 /**
  * @dev Extension of {Governor} for settings updatable through governance.
@@ -47,19 +46,25 @@ abstract contract GovernorSettingsUpgradeable is Initializable, GovernorUpgradea
         _setProposalThreshold(initialProposalThreshold);
     }
 
-    /// @inheritdoc IGovernor
+    /**
+     * @dev See {IGovernor-votingDelay}.
+     */
     function votingDelay() public view virtual override returns (uint256) {
         GovernorSettingsStorage storage $ = _getGovernorSettingsStorage();
         return $._votingDelay;
     }
 
-    /// @inheritdoc IGovernor
+    /**
+     * @dev See {IGovernor-votingPeriod}.
+     */
     function votingPeriod() public view virtual override returns (uint256) {
         GovernorSettingsStorage storage $ = _getGovernorSettingsStorage();
         return $._votingPeriod;
     }
 
-    /// @inheritdoc GovernorUpgradeable
+    /**
+     * @dev See {Governor-proposalThreshold}.
+     */
     function proposalThreshold() public view virtual override returns (uint256) {
         GovernorSettingsStorage storage $ = _getGovernorSettingsStorage();
         return $._proposalThreshold;

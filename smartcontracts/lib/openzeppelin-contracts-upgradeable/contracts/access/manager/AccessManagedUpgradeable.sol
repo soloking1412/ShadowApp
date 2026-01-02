@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Contracts (last updated v5.4.0) (access/manager/AccessManaged.sol)
+// OpenZeppelin Contracts (last updated v5.0.0) (access/manager/AccessManaged.sol)
 
 pragma solidity ^0.8.20;
 
+import {IAuthority} from "@openzeppelin/contracts/access/manager/IAuthority.sol";
 import {AuthorityUtils} from "@openzeppelin/contracts/access/manager/AuthorityUtils.sol";
 import {IAccessManager} from "@openzeppelin/contracts/access/manager/IAccessManager.sol";
 import {IAccessManaged} from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
 import {ContextUpgradeable} from "../../utils/ContextUpgradeable.sol";
-import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
+import {Initializable} from "../../proxy/utils/Initializable.sol";
 
 /**
  * @dev This contract module makes available a {restricted} modifier. Functions decorated with this modifier will be
@@ -62,7 +63,7 @@ abstract contract AccessManagedUpgradeable is Initializable, ContextUpgradeable,
      * ====
      * Avoid adding this modifier to the https://docs.soliditylang.org/en/v0.8.20/contracts.html#receive-ether-function[`receive()`]
      * function or the https://docs.soliditylang.org/en/v0.8.20/contracts.html#fallback-function[`fallback()`]. These
-     * functions are the only execution paths where a function selector cannot be unambiguously determined from the calldata
+     * functions are the only execution paths where a function selector cannot be unambiguosly determined from the calldata
      * since the selector defaults to `0x00000000` in the `receive()` function and similarly in the `fallback()` function
      * if no calldata is provided. (See {_checkCanCall}).
      *

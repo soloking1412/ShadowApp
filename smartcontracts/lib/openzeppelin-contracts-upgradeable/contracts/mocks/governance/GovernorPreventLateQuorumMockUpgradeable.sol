@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.20;
 
 import {GovernorUpgradeable} from "../../governance/GovernorUpgradeable.sol";
 import {GovernorPreventLateQuorumUpgradeable} from "../../governance/extensions/GovernorPreventLateQuorumUpgradeable.sol";
 import {GovernorSettingsUpgradeable} from "../../governance/extensions/GovernorSettingsUpgradeable.sol";
 import {GovernorCountingSimpleUpgradeable} from "../../governance/extensions/GovernorCountingSimpleUpgradeable.sol";
 import {GovernorVotesUpgradeable} from "../../governance/extensions/GovernorVotesUpgradeable.sol";
-import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
+import {Initializable} from "../../proxy/utils/Initializable.sol";
 
 abstract contract GovernorPreventLateQuorumMockUpgradeable is
     Initializable, GovernorSettingsUpgradeable,
@@ -39,7 +39,13 @@ abstract contract GovernorPreventLateQuorumMockUpgradeable is
         return super.proposalThreshold();
     }
 
-    function _tallyUpdated(uint256 proposalId) internal override(GovernorUpgradeable, GovernorPreventLateQuorumUpgradeable) {
-        super._tallyUpdated(proposalId);
+    function _castVote(
+        uint256 proposalId,
+        address account,
+        uint8 support,
+        string memory reason,
+        bytes memory params
+    ) internal override(GovernorUpgradeable, GovernorPreventLateQuorumUpgradeable) returns (uint256) {
+        return super._castVote(proposalId, account, support, reason, params);
     }
 }

@@ -1,66 +1,71 @@
-const { ethers } = require('hardhat');
+const { BN } = require('@openzeppelin/test-helpers');
+
 const { expect } = require('chai');
-const { loadFixture } = require('@nomicfoundation/hardhat-network-helpers');
 
-const ids = [42n, 1137n];
-const values = [3000n, 9902n];
+const { expectRevertCustomError } = require('../../../helpers/customError');
 
-async function fixture() {
-  const [holder, operator, other] = await ethers.getSigners();
+const ERC1155Burnable = artifacts.require('$ERC1155Burnable');
 
-  const token = await ethers.deployContract('$ERC1155Burnable', ['https://token-cdn-domain/{id}.json']);
-  await token.$_mint(holder, ids[0], values[0], '0x');
-  await token.$_mint(holder, ids[1], values[1], '0x');
+contract('ERC1155Burnable', function (accounts) {
+  const [holder, operator, other] = accounts;
 
-  return { token, holder, operator, other };
-}
+  const uri = 'https://token.com';
 
-describe('ERC1155Burnable', function () {
+  const tokenIds = [new BN('42'), new BN('1137')];
+  const values = [new BN('3000'), new BN('9902')];
+
   beforeEach(async function () {
-    Object.assign(this, await loadFixture(fixture));
+    this.token = await ERC1155Burnable.new(uri);
+
+    await this.token.$_mint(holder, tokenIds[0], values[0], '0x');
+    await this.token.$_mint(holder, tokenIds[1], values[1], '0x');
   });
 
   describe('burn', function () {
     it('holder can burn their tokens', async function () {
-      await this.token.connect(this.holder).burn(this.holder, ids[0], values[0] - 1n);
+      await this.token.burn(holder, tokenIds[0], values[0].subn(1), { from: holder });
 
-      expect(await this.token.balanceOf(this.holder, ids[0])).to.equal(1n);
+      expect(await this.token.balanceOf(holder, tokenIds[0])).to.be.bignumber.equal('1');
     });
 
     it("approved operators can burn the holder's tokens", async function () {
-      await this.token.connect(this.holder).setApprovalForAll(this.operator, true);
-      await this.token.connect(this.operator).burn(this.holder, ids[0], values[0] - 1n);
+      await this.token.setApprovalForAll(operator, true, { from: holder });
+      await this.token.burn(holder, tokenIds[0], values[0].subn(1), { from: operator });
 
-      expect(await this.token.balanceOf(this.holder, ids[0])).to.equal(1n);
+      expect(await this.token.balanceOf(holder, tokenIds[0])).to.be.bignumber.equal('1');
     });
 
     it("unapproved accounts cannot burn the holder's tokens", async function () {
-      await expect(this.token.connect(this.other).burn(this.holder, ids[0], values[0] - 1n))
-        .to.be.revertedWithCustomError(this.token, 'ERC1155MissingApprovalForAll')
-        .withArgs(this.other, this.holder);
+      await expectRevertCustomError(
+        this.token.burn(holder, tokenIds[0], values[0].subn(1), { from: other }),
+        'ERC1155MissingApprovalForAll',
+        [other, holder],
+      );
     });
   });
 
   describe('burnBatch', function () {
     it('holder can burn their tokens', async function () {
-      await this.token.connect(this.holder).burnBatch(this.holder, ids, [values[0] - 1n, values[1] - 2n]);
+      await this.token.burnBatch(holder, tokenIds, [values[0].subn(1), values[1].subn(2)], { from: holder });
 
-      expect(await this.token.balanceOf(this.holder, ids[0])).to.equal(1n);
-      expect(await this.token.balanceOf(this.holder, ids[1])).to.equal(2n);
+      expect(await this.token.balanceOf(holder, tokenIds[0])).to.be.bignumber.equal('1');
+      expect(await this.token.balanceOf(holder, tokenIds[1])).to.be.bignumber.equal('2');
     });
 
     it("approved operators can burn the holder's tokens", async function () {
-      await this.token.connect(this.holder).setApprovalForAll(this.operator, true);
-      await this.token.connect(this.operator).burnBatch(this.holder, ids, [values[0] - 1n, values[1] - 2n]);
+      await this.token.setApprovalForAll(operator, true, { from: holder });
+      await this.token.burnBatch(holder, tokenIds, [values[0].subn(1), values[1].subn(2)], { from: operator });
 
-      expect(await this.token.balanceOf(this.holder, ids[0])).to.equal(1n);
-      expect(await this.token.balanceOf(this.holder, ids[1])).to.equal(2n);
+      expect(await this.token.balanceOf(holder, tokenIds[0])).to.be.bignumber.equal('1');
+      expect(await this.token.balanceOf(holder, tokenIds[1])).to.be.bignumber.equal('2');
     });
 
     it("unapproved accounts cannot burn the holder's tokens", async function () {
-      await expect(this.token.connect(this.other).burnBatch(this.holder, ids, [values[0] - 1n, values[1] - 2n]))
-        .to.be.revertedWithCustomError(this.token, 'ERC1155MissingApprovalForAll')
-        .withArgs(this.other, this.holder);
+      await expectRevertCustomError(
+        this.token.burnBatch(holder, tokenIds, [values[0].subn(1), values[1].subn(2)], { from: other }),
+        'ERC1155MissingApprovalForAll',
+        [other, holder],
+      );
     });
   });
 });

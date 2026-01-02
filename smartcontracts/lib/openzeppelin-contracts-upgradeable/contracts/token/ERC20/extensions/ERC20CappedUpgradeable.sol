@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Contracts (last updated v5.4.0) (token/ERC20/extensions/ERC20Capped.sol)
+// OpenZeppelin Contracts (last updated v5.0.0) (token/ERC20/extensions/ERC20Capped.sol)
 
 pragma solidity ^0.8.20;
 
 import {ERC20Upgradeable} from "../ERC20Upgradeable.sol";
-import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
+import {Initializable} from "../../../proxy/utils/Initializable.sol";
 
 /**
  * @dev Extension of {ERC20} that adds a cap to the supply of tokens.
@@ -58,7 +58,9 @@ abstract contract ERC20CappedUpgradeable is Initializable, ERC20Upgradeable {
         return $._cap;
     }
 
-    /// @inheritdoc ERC20Upgradeable
+    /**
+     * @dev See {ERC20-_update}.
+     */
     function _update(address from, address to, uint256 value) internal virtual override {
         super._update(from, to, value);
 

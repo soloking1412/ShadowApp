@@ -1,211 +1,175 @@
-const { ethers } = require('hardhat');
+const { expectEvent } = require('@openzeppelin/test-helpers');
 const { expect } = require('chai');
 
-const zip = (array1, array2) => array1.map((item, index) => [item, array2[index]]);
+const zip = require('lodash.zip');
+const { expectRevertCustomError } = require('../../helpers/customError');
 
-function shouldBehaveLikeMap() {
-  async function expectMembersMatch(methods, keys, values) {
+function shouldBehaveLikeMap(keys, values, zeroValue, methods, events) {
+  const [keyA, keyB, keyC] = keys;
+  const [valueA, valueB, valueC] = values;
+
+  async function expectMembersMatch(map, keys, values) {
     expect(keys.length).to.equal(values.length);
-    expect(await methods.length()).to.equal(keys.length);
-    expect([...(await methods.keys())]).to.have.members(keys);
 
-    for (const [key, value] of zip(keys, values)) {
-      expect(await methods.contains(key)).to.be.true;
-      expect(await methods.get(key)).to.equal(value);
-    }
+    await Promise.all(keys.map(async key => expect(await methods.contains(map, key)).to.equal(true)));
 
-    expect(await Promise.all(keys.map((_, index) => methods.at(index)))).to.have.deep.members(zip(keys, values));
+    expect(await methods.length(map)).to.bignumber.equal(keys.length.toString());
+
+    expect((await Promise.all(keys.map(key => methods.get(map, key)))).map(k => k.toString())).to.have.same.members(
+      values.map(value => value.toString()),
+    );
+
+    // To compare key-value pairs, we zip keys and values, and convert BNs to
+    // strings to workaround Chai limitations when dealing with nested arrays
+    expect(
+      await Promise.all(
+        [...Array(keys.length).keys()].map(async index => {
+          const entry = await methods.at(map, index);
+          return [entry[0].toString(), entry[1].toString()];
+        }),
+      ),
+    ).to.have.same.deep.members(
+      zip(
+        keys.map(k => k.toString()),
+        values.map(v => v.toString()),
+      ),
+    );
+
+    // This also checks that both arrays have the same length
+    expect((await methods.keys(map)).map(k => k.toString())).to.have.same.members(keys.map(key => key.toString()));
   }
 
   it('starts empty', async function () {
-    expect(await this.methods.contains(this.keyA)).to.be.false;
+    expect(await methods.contains(this.map, keyA)).to.equal(false);
 
-    await expectMembersMatch(this.methods, [], []);
+    await expectMembersMatch(this.map, [], []);
   });
 
   describe('set', function () {
     it('adds a key', async function () {
-      await expect(this.methods.set(this.keyA, this.valueA)).to.emit(this.mock, this.events.setReturn).withArgs(true);
+      const receipt = await methods.set(this.map, keyA, valueA);
+      expectEvent(receipt, events.setReturn, { ret0: true });
 
-      await expectMembersMatch(this.methods, [this.keyA], [this.valueA]);
+      await expectMembersMatch(this.map, [keyA], [valueA]);
     });
 
     it('adds several keys', async function () {
-      await this.methods.set(this.keyA, this.valueA);
-      await this.methods.set(this.keyB, this.valueB);
+      await methods.set(this.map, keyA, valueA);
+      await methods.set(this.map, keyB, valueB);
 
-      await expectMembersMatch(this.methods, [this.keyA, this.keyB], [this.valueA, this.valueB]);
-      expect(await this.methods.contains(this.keyC)).to.be.false;
+      await expectMembersMatch(this.map, [keyA, keyB], [valueA, valueB]);
+      expect(await methods.contains(this.map, keyC)).to.equal(false);
     });
 
     it('returns false when adding keys already in the set', async function () {
-      await this.methods.set(this.keyA, this.valueA);
+      await methods.set(this.map, keyA, valueA);
 
-      await expect(this.methods.set(this.keyA, this.valueA)).to.emit(this.mock, this.events.setReturn).withArgs(false);
+      const receipt = await methods.set(this.map, keyA, valueA);
+      expectEvent(receipt, events.setReturn, { ret0: false });
 
-      await expectMembersMatch(this.methods, [this.keyA], [this.valueA]);
+      await expectMembersMatch(this.map, [keyA], [valueA]);
     });
 
     it('updates values for keys already in the set', async function () {
-      await this.methods.set(this.keyA, this.valueA);
-      await this.methods.set(this.keyA, this.valueB);
+      await methods.set(this.map, keyA, valueA);
+      await methods.set(this.map, keyA, valueB);
 
-      await expectMembersMatch(this.methods, [this.keyA], [this.valueB]);
+      await expectMembersMatch(this.map, [keyA], [valueB]);
     });
   });
 
   describe('remove', function () {
     it('removes added keys', async function () {
-      await this.methods.set(this.keyA, this.valueA);
+      await methods.set(this.map, keyA, valueA);
 
-      await expect(this.methods.remove(this.keyA)).to.emit(this.mock, this.events.removeReturn).withArgs(true);
+      const receipt = await methods.remove(this.map, keyA);
+      expectEvent(receipt, events.removeReturn, { ret0: true });
 
-      expect(await this.methods.contains(this.keyA)).to.be.false;
-      await expectMembersMatch(this.methods, [], []);
+      expect(await methods.contains(this.map, keyA)).to.equal(false);
+      await expectMembersMatch(this.map, [], []);
     });
 
     it('returns false when removing keys not in the set', async function () {
-      await expect(await this.methods.remove(this.keyA))
-        .to.emit(this.mock, this.events.removeReturn)
-        .withArgs(false);
+      const receipt = await methods.remove(this.map, keyA);
+      expectEvent(receipt, events.removeReturn, { ret0: false });
 
-      expect(await this.methods.contains(this.keyA)).to.be.false;
+      expect(await methods.contains(this.map, keyA)).to.equal(false);
     });
 
     it('adds and removes multiple keys', async function () {
       // []
 
-      await this.methods.set(this.keyA, this.valueA);
-      await this.methods.set(this.keyC, this.valueC);
+      await methods.set(this.map, keyA, valueA);
+      await methods.set(this.map, keyC, valueC);
 
       // [A, C]
 
-      await this.methods.remove(this.keyA);
-      await this.methods.remove(this.keyB);
+      await methods.remove(this.map, keyA);
+      await methods.remove(this.map, keyB);
 
       // [C]
 
-      await this.methods.set(this.keyB, this.valueB);
+      await methods.set(this.map, keyB, valueB);
 
       // [C, B]
 
-      await this.methods.set(this.keyA, this.valueA);
-      await this.methods.remove(this.keyC);
+      await methods.set(this.map, keyA, valueA);
+      await methods.remove(this.map, keyC);
 
       // [A, B]
 
-      await this.methods.set(this.keyA, this.valueA);
-      await this.methods.set(this.keyB, this.valueB);
+      await methods.set(this.map, keyA, valueA);
+      await methods.set(this.map, keyB, valueB);
 
       // [A, B]
 
-      await this.methods.set(this.keyC, this.valueC);
-      await this.methods.remove(this.keyA);
+      await methods.set(this.map, keyC, valueC);
+      await methods.remove(this.map, keyA);
 
       // [B, C]
 
-      await this.methods.set(this.keyA, this.valueA);
-      await this.methods.remove(this.keyB);
+      await methods.set(this.map, keyA, valueA);
+      await methods.remove(this.map, keyB);
 
       // [A, C]
 
-      await expectMembersMatch(this.methods, [this.keyA, this.keyC], [this.valueA, this.valueC]);
+      await expectMembersMatch(this.map, [keyA, keyC], [valueA, valueC]);
 
-      expect(await this.methods.contains(this.keyA)).to.be.true;
-      expect(await this.methods.contains(this.keyB)).to.be.false;
-      expect(await this.methods.contains(this.keyC)).to.be.true;
-    });
-  });
-
-  describe('clear', function () {
-    it('clears a single entry', async function () {
-      await this.methods.set(this.keyA, this.valueA);
-
-      await this.methods.clear();
-
-      expect(await this.methods.contains(this.keyA)).to.be.false;
-      await expectMembersMatch(this.methods, [], []);
-    });
-
-    it('clears multiple entries', async function () {
-      await this.methods.set(this.keyA, this.valueA);
-      await this.methods.set(this.keyB, this.valueB);
-      await this.methods.set(this.keyC, this.valueC);
-
-      await this.methods.clear();
-
-      expect(await this.methods.contains(this.keyA)).to.be.false;
-      expect(await this.methods.contains(this.keyB)).to.be.false;
-      expect(await this.methods.contains(this.keyC)).to.be.false;
-      await expectMembersMatch(this.methods, [], []);
-    });
-
-    it('does not revert on empty map', async function () {
-      await this.methods.clear();
-    });
-
-    it('clear then add entry', async function () {
-      await this.methods.set(this.keyA, this.valueA);
-      await this.methods.set(this.keyB, this.valueB);
-      await this.methods.set(this.keyC, this.valueC);
-
-      await this.methods.clear();
-
-      await this.methods.set(this.keyA, this.valueA);
-
-      expect(await this.methods.contains(this.keyA)).to.be.true;
-      expect(await this.methods.contains(this.keyB)).to.be.false;
-      expect(await this.methods.contains(this.keyC)).to.be.false;
-      await expectMembersMatch(this.methods, [this.keyA], [this.valueA]);
+      expect(await methods.contains(this.map, keyA)).to.equal(true);
+      expect(await methods.contains(this.map, keyB)).to.equal(false);
+      expect(await methods.contains(this.map, keyC)).to.equal(true);
     });
   });
 
   describe('read', function () {
     beforeEach(async function () {
-      await this.methods.set(this.keyA, this.valueA);
+      await methods.set(this.map, keyA, valueA);
     });
 
     describe('get', function () {
       it('existing value', async function () {
-        expect(await this.methods.get(this.keyA)).to.equal(this.valueA);
+        expect(await methods.get(this.map, keyA).then(r => r.toString())).to.be.equal(valueA.toString());
       });
-
       it('missing value', async function () {
-        await expect(this.methods.get(this.keyB))
-          .to.be.revertedWithCustomError(this.mock, this.error ?? 'EnumerableMapNonexistentKey')
-          .withArgs(
-            this.key?.memory || this.value?.memory
-              ? this.keyB
-              : ethers.AbiCoder.defaultAbiCoder().encode([this.key.type], [this.keyB]),
-          );
+        const key = web3.utils.toHex(keyB);
+        await expectRevertCustomError(methods.get(this.map, keyB), 'EnumerableMapNonexistentKey', [
+          key.length == 66 ? key : web3.utils.padLeft(key, 64, '0'),
+        ]);
       });
     });
 
     describe('tryGet', function () {
       it('existing value', async function () {
-        expect(await this.methods.tryGet(this.keyA)).to.have.ordered.members([true, this.valueA]);
+        const result = await methods.tryGet(this.map, keyA);
+        expect(result['0']).to.be.equal(true);
+        expect(result['1'].toString()).to.be.equal(valueA.toString());
       });
-
       it('missing value', async function () {
-        expect(await this.methods.tryGet(this.keyB)).to.have.ordered.members([false, this.zeroValue]);
+        const result = await methods.tryGet(this.map, keyB);
+        expect(result['0']).to.be.equal(false);
+        expect(result['1'].toString()).to.be.equal(zeroValue.toString());
       });
     });
-  });
-
-  it('keys (full & paginated)', async function () {
-    const keys = [this.keyA, this.keyB, this.keyC];
-    await this.methods.set(this.keyA, this.valueA);
-    await this.methods.set(this.keyB, this.valueB);
-    await this.methods.set(this.keyC, this.valueC);
-
-    // get all values
-    expect([...(await this.methods.keys())]).to.deep.equal(keys);
-
-    // try pagination
-    for (const begin of [0, 1, 2, 3, 4])
-      for (const end of [0, 1, 2, 3, 4]) {
-        expect([...(await this.methods.keysPage(begin, end))]).to.deep.equal(keys.slice(begin, end));
-      }
   });
 }
 

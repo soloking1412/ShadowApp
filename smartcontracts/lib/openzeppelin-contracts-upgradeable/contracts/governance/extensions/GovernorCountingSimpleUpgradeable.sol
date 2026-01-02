@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Contracts (last updated v5.4.0) (governance/extensions/GovernorCountingSimple.sol)
+// OpenZeppelin Contracts (last updated v5.0.0) (governance/extensions/GovernorCountingSimple.sol)
 
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.20;
 
-import {IGovernor} from "@openzeppelin/contracts/governance/IGovernor.sol";
 import {GovernorUpgradeable} from "../GovernorUpgradeable.sol";
-import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
+import {Initializable} from "../../proxy/utils/Initializable.sol";
 
 /**
  * @dev Extension of {Governor} for simple, 3 options, vote counting.
@@ -46,13 +45,17 @@ abstract contract GovernorCountingSimpleUpgradeable is Initializable, GovernorUp
 
     function __GovernorCountingSimple_init_unchained() internal onlyInitializing {
     }
-    /// @inheritdoc IGovernor
+    /**
+     * @dev See {IGovernor-COUNTING_MODE}.
+     */
     // solhint-disable-next-line func-name-mixedcase
     function COUNTING_MODE() public pure virtual override returns (string memory) {
         return "support=bravo&quorum=for,abstain";
     }
 
-    /// @inheritdoc IGovernor
+    /**
+     * @dev See {IGovernor-hasVoted}.
+     */
     function hasVoted(uint256 proposalId, address account) public view virtual override returns (bool) {
         GovernorCountingSimpleStorage storage $ = _getGovernorCountingSimpleStorage();
         return $._proposalVotes[proposalId].hasVoted[account];
@@ -69,7 +72,9 @@ abstract contract GovernorCountingSimpleUpgradeable is Initializable, GovernorUp
         return (proposalVote.againstVotes, proposalVote.forVotes, proposalVote.abstainVotes);
     }
 
-    /// @inheritdoc GovernorUpgradeable
+    /**
+     * @dev See {Governor-_quorumReached}.
+     */
     function _quorumReached(uint256 proposalId) internal view virtual override returns (bool) {
         GovernorCountingSimpleStorage storage $ = _getGovernorCountingSimpleStorage();
         ProposalVote storage proposalVote = $._proposalVotes[proposalId];
@@ -94,9 +99,9 @@ abstract contract GovernorCountingSimpleUpgradeable is Initializable, GovernorUp
         uint256 proposalId,
         address account,
         uint8 support,
-        uint256 totalWeight,
+        uint256 weight,
         bytes memory // params
-    ) internal virtual override returns (uint256) {
+    ) internal virtual override {
         GovernorCountingSimpleStorage storage $ = _getGovernorCountingSimpleStorage();
         ProposalVote storage proposalVote = $._proposalVotes[proposalId];
 
@@ -106,15 +111,13 @@ abstract contract GovernorCountingSimpleUpgradeable is Initializable, GovernorUp
         proposalVote.hasVoted[account] = true;
 
         if (support == uint8(VoteType.Against)) {
-            proposalVote.againstVotes += totalWeight;
+            proposalVote.againstVotes += weight;
         } else if (support == uint8(VoteType.For)) {
-            proposalVote.forVotes += totalWeight;
+            proposalVote.forVotes += weight;
         } else if (support == uint8(VoteType.Abstain)) {
-            proposalVote.abstainVotes += totalWeight;
+            proposalVote.abstainVotes += weight;
         } else {
             revert GovernorInvalidVoteType();
         }
-
-        return totalWeight;
     }
 }

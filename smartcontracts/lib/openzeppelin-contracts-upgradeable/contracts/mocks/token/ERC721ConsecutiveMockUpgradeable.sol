@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.20;
 
 import {ERC721Upgradeable} from "../../token/ERC721/ERC721Upgradeable.sol";
 import {ERC721ConsecutiveUpgradeable} from "../../token/ERC721/extensions/ERC721ConsecutiveUpgradeable.sol";
 import {ERC721PausableUpgradeable} from "../../token/ERC721/extensions/ERC721PausableUpgradeable.sol";
 import {ERC721VotesUpgradeable} from "../../token/ERC721/extensions/ERC721VotesUpgradeable.sol";
 import {EIP712Upgradeable} from "../../utils/cryptography/EIP712Upgradeable.sol";
-import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
+import {Initializable} from "../../proxy/utils/Initializable.sol";
 
 /**
  * @title ERC721ConsecutiveMock
@@ -24,6 +24,7 @@ contract ERC721ConsecutiveMockUpgradeable is Initializable, ERC721ConsecutiveUpg
         uint96[] memory amounts
     ) internal onlyInitializing {
         __ERC721_init_unchained(name, symbol);
+        __Pausable_init_unchained();
         __EIP712_init_unchained(name, "1");
         __ERC721ConsecutiveMock_init_unchained(name, symbol, offset, delegates, receivers, amounts);
     }

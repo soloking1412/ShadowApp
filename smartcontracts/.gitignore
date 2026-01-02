@@ -1,14 +1,58 @@
-# Compiler files
+# Foundry/Forge compiler files
 cache/
 out/
-lib/
-# Ignores development broadcast logs
-!/broadcast
-/broadcast/*/31337/
-/broadcast/**/dry-run/
+broadcast/
 
-# Docs
+# Hardhat files
+cache_hardhat/
+artifacts/
+typechain/
+typechain-types/
+
+# Node modules
+node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Environment files
+.env
+.env.local
+.env.development
+.env.production
+.env.test
+
+# Logs
+*.log
+
+# Documentation
 docs/
 
-# Dotenv file
-.env
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Backup and temporary files
+*_backup/
+*_temp/
+unused/
+*.bak
+*.tmp
+*.temp
+
+# Test coverage
+coverage/
+coverage.json
+
+# Deployment files (keep only in version control if needed)
+deployments/*/solcInputs/
+
+# Slither, Mythril, etc.
+.slither/
+crytic-export/

@@ -1,134 +1,114 @@
-const { ethers } = require('hardhat');
+const { BN, expectEvent } = require('@openzeppelin/test-helpers');
 const { expect } = require('chai');
-const { loadFixture } = require('@nomicfoundation/hardhat-network-helpers');
 
 const { shouldSupportInterfaces } = require('../../../utils/introspection/SupportsInterface.behavior');
+const { expectRevertCustomError } = require('../../../helpers/customError');
 
-const name = 'Non Fungible Token';
-const symbol = 'NFT';
-const baseURI = 'https://api.example.com/v1/';
-const otherBaseURI = 'https://api.example.com/v2/';
-const sampleUri = 'mock://mytoken';
-const tokenId = 1n;
-const nonExistentTokenId = 2n;
+const ERC721URIStorageMock = artifacts.require('$ERC721URIStorageMock');
 
-async function fixture() {
-  const [owner] = await ethers.getSigners();
-  const token = await ethers.deployContract('$ERC721URIStorageMock', [name, symbol]);
-  return { owner, token };
-}
+contract('ERC721URIStorage', function (accounts) {
+  const [owner] = accounts;
 
-describe('ERC721URIStorage', function () {
+  const name = 'Non Fungible Token';
+  const symbol = 'NFT';
+
+  const firstTokenId = new BN('5042');
+  const nonExistentTokenId = new BN('13');
+
   beforeEach(async function () {
-    Object.assign(this, await loadFixture(fixture));
+    this.token = await ERC721URIStorageMock.new(name, symbol);
   });
 
   shouldSupportInterfaces(['0x49064906']);
 
   describe('token URI', function () {
     beforeEach(async function () {
-      await this.token.$_mint(this.owner, tokenId);
+      await this.token.$_mint(owner, firstTokenId);
     });
 
+    const baseURI = 'https://api.example.com/v1/';
+    const sampleUri = 'mock://mytoken';
+
     it('it is empty by default', async function () {
-      await expect(this.token.$_suffixURI(tokenId)).to.eventually.equal('');
-      await expect(this.token.tokenURI(tokenId)).to.eventually.equal('');
+      expect(await this.token.tokenURI(firstTokenId)).to.be.equal('');
     });
 
     it('reverts when queried for non existent token id', async function () {
-      await expect(this.token.$_suffixURI(tokenId)).to.eventually.equal('');
-      await expect(this.token.tokenURI(nonExistentTokenId))
-        .to.be.revertedWithCustomError(this.token, 'ERC721NonexistentToken')
-        .withArgs(nonExistentTokenId);
+      await expectRevertCustomError(this.token.tokenURI(nonExistentTokenId), 'ERC721NonexistentToken', [
+        nonExistentTokenId,
+      ]);
     });
 
     it('can be set for a token id', async function () {
-      await this.token.$_setTokenURI(tokenId, sampleUri);
-
-      await expect(this.token.$_suffixURI(tokenId)).to.eventually.equal(sampleUri);
-      await expect(this.token.tokenURI(tokenId)).to.eventually.equal(sampleUri);
+      await this.token.$_setTokenURI(firstTokenId, sampleUri);
+      expect(await this.token.tokenURI(firstTokenId)).to.be.equal(sampleUri);
     });
 
     it('setting the uri emits an event', async function () {
-      await expect(this.token.$_setTokenURI(tokenId, sampleUri))
-        .to.emit(this.token, 'MetadataUpdate')
-        .withArgs(tokenId);
+      expectEvent(await this.token.$_setTokenURI(firstTokenId, sampleUri), 'MetadataUpdate', {
+        _tokenId: firstTokenId,
+      });
     });
 
     it('setting the uri for non existent token id is allowed', async function () {
-      await expect(await this.token.$_setTokenURI(nonExistentTokenId, sampleUri))
-        .to.emit(this.token, 'MetadataUpdate')
-        .withArgs(nonExistentTokenId);
+      expectEvent(await this.token.$_setTokenURI(nonExistentTokenId, sampleUri), 'MetadataUpdate', {
+        _tokenId: nonExistentTokenId,
+      });
 
       // value will be accessible after mint
-      await this.token.$_mint(this.owner, nonExistentTokenId);
-      await expect(this.token.tokenURI(nonExistentTokenId)).to.eventually.equal(sampleUri);
+      await this.token.$_mint(owner, nonExistentTokenId);
+      expect(await this.token.tokenURI(nonExistentTokenId)).to.be.equal(sampleUri);
     });
 
     it('base URI can be set', async function () {
       await this.token.setBaseURI(baseURI);
-      await expect(this.token.$_baseURI()).to.eventually.equal(baseURI);
+      expect(await this.token.$_baseURI()).to.equal(baseURI);
     });
 
     it('base URI is added as a prefix to the token URI', async function () {
       await this.token.setBaseURI(baseURI);
-      await this.token.$_setTokenURI(tokenId, sampleUri);
+      await this.token.$_setTokenURI(firstTokenId, sampleUri);
 
-      await expect(this.token.$_suffixURI(tokenId)).to.eventually.equal(sampleUri);
-      await expect(this.token.tokenURI(tokenId)).to.eventually.equal(baseURI + sampleUri);
+      expect(await this.token.tokenURI(firstTokenId)).to.be.equal(baseURI + sampleUri);
     });
 
     it('token URI can be changed by changing the base URI', async function () {
       await this.token.setBaseURI(baseURI);
-      await this.token.$_setTokenURI(tokenId, sampleUri);
+      await this.token.$_setTokenURI(firstTokenId, sampleUri);
 
-      await this.token.setBaseURI(otherBaseURI);
-
-      await expect(this.token.$_suffixURI(tokenId)).to.eventually.equal(sampleUri);
-      await expect(this.token.tokenURI(tokenId)).to.eventually.equal(otherBaseURI + sampleUri);
+      const newBaseURI = 'https://api.example.com/v2/';
+      await this.token.setBaseURI(newBaseURI);
+      expect(await this.token.tokenURI(firstTokenId)).to.be.equal(newBaseURI + sampleUri);
     });
 
     it('tokenId is appended to base URI for tokens with no URI', async function () {
       await this.token.setBaseURI(baseURI);
 
-      await expect(this.token.$_suffixURI(tokenId)).to.eventually.equal('');
-      await expect(this.token.tokenURI(tokenId)).to.eventually.equal(baseURI + tokenId);
+      expect(await this.token.tokenURI(firstTokenId)).to.be.equal(baseURI + firstTokenId);
     });
 
     it('tokens without URI can be burnt ', async function () {
-      await this.token.$_burn(tokenId);
+      await this.token.$_burn(firstTokenId);
 
-      await expect(this.token.$_suffixURI(tokenId)).to.eventually.equal('');
-      await expect(this.token.tokenURI(tokenId))
-        .to.be.revertedWithCustomError(this.token, 'ERC721NonexistentToken')
-        .withArgs(tokenId);
+      await expectRevertCustomError(this.token.tokenURI(firstTokenId), 'ERC721NonexistentToken', [firstTokenId]);
     });
 
     it('tokens with URI can be burnt ', async function () {
-      await this.token.$_setTokenURI(tokenId, sampleUri);
+      await this.token.$_setTokenURI(firstTokenId, sampleUri);
 
-      await this.token.$_burn(tokenId);
+      await this.token.$_burn(firstTokenId);
 
-      await expect(this.token.$_suffixURI(tokenId)).to.eventually.equal(sampleUri);
-      await expect(this.token.tokenURI(tokenId))
-        .to.be.revertedWithCustomError(this.token, 'ERC721NonexistentToken')
-        .withArgs(tokenId);
+      await expectRevertCustomError(this.token.tokenURI(firstTokenId), 'ERC721NonexistentToken', [firstTokenId]);
     });
 
     it('tokens URI is kept if token is burnt and reminted ', async function () {
-      await this.token.$_setTokenURI(tokenId, sampleUri);
+      await this.token.$_setTokenURI(firstTokenId, sampleUri);
 
-      await this.token.$_burn(tokenId);
+      await this.token.$_burn(firstTokenId);
+      await expectRevertCustomError(this.token.tokenURI(firstTokenId), 'ERC721NonexistentToken', [firstTokenId]);
 
-      await expect(this.token.$_suffixURI(tokenId)).to.eventually.equal(sampleUri);
-      await expect(this.token.tokenURI(tokenId))
-        .to.be.revertedWithCustomError(this.token, 'ERC721NonexistentToken')
-        .withArgs(tokenId);
-
-      await this.token.$_mint(this.owner, tokenId);
-
-      await expect(this.token.$_suffixURI(tokenId)).to.eventually.equal(sampleUri);
-      await expect(this.token.tokenURI(tokenId)).to.eventually.equal(sampleUri);
+      await this.token.$_mint(owner, firstTokenId);
+      expect(await this.token.tokenURI(firstTokenId)).to.be.equal(sampleUri);
     });
   });
 });

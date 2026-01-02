@@ -1,22 +1,20 @@
-const { ethers } = require('hardhat');
-
+const { time } = require('@openzeppelin/test-helpers');
 const { MAX_UINT64 } = require('./constants');
-const time = require('./time');
-const { upgradeableSlot } = require('./storage');
+const { artifacts } = require('hardhat');
 
 function buildBaseRoles() {
   const roles = {
     ADMIN: {
-      id: 0n,
+      id: web3.utils.toBN(0),
     },
     SOME_ADMIN: {
-      id: 17n,
+      id: web3.utils.toBN(17),
     },
     SOME_GUARDIAN: {
-      id: 35n,
+      id: web3.utils.toBN(35),
     },
     SOME: {
-      id: 42n,
+      id: web3.utils.toBN(42),
     },
     PUBLIC: {
       id: MAX_UINT64,
@@ -46,32 +44,20 @@ const formatAccess = access => [access[0], access[1].toString()];
 const MINSETBACK = time.duration.days(5);
 const EXPIRATION = time.duration.weeks(1);
 
-const EXECUTION_ID_STORAGE_SLOT = upgradeableSlot('AccessManager', 3n);
-const CONSUMING_SCHEDULE_STORAGE_SLOT = upgradeableSlot('AccessManaged', 0n);
+let EXECUTION_ID_STORAGE_SLOT = 3n;
+let CONSUMING_SCHEDULE_STORAGE_SLOT = 0n;
+try {
+  // Try to get the artifact paths, will throw if it doesn't exist
+  artifacts._getArtifactPathSync('AccessManagerUpgradeable');
+  artifacts._getArtifactPathSync('AccessManagedUpgradeable');
 
-/**
- * @requires this.{manager, caller, target, calldata}
- */
-async function prepareOperation(manager, { caller, target, calldata, delay }) {
-  const scheduledAt = (await time.clock.timestamp()) + 1n;
-  await time.increaseTo.timestamp(scheduledAt, false); // Fix next block timestamp for predictability
-
-  return {
-    schedule: () => manager.connect(caller).schedule(target, calldata, scheduledAt + delay),
-    scheduledAt,
-    operationId: hashOperation(caller, target, calldata),
-  };
+  // ERC-7201 namespace location for AccessManager
+  EXECUTION_ID_STORAGE_SLOT += 0x40c6c8c28789853c7efd823ab20824bbd71718a8a5915e855f6f288c9a26ad00n;
+  // ERC-7201 namespace location for AccessManaged
+  CONSUMING_SCHEDULE_STORAGE_SLOT += 0xf3177357ab46d8af007ab3fdb9af81da189e1068fefdc0073dca88a2cab40a00n;
+} catch (_) {
+  // eslint-disable-next-line no-empty
 }
-
-const lazyGetAddress = addressable => addressable.address ?? addressable.target ?? addressable;
-
-const hashOperation = (caller, target, data) =>
-  ethers.keccak256(
-    ethers.AbiCoder.defaultAbiCoder().encode(
-      ['address', 'address', 'bytes'],
-      [lazyGetAddress(caller), lazyGetAddress(target), data],
-    ),
-  );
 
 module.exports = {
   buildBaseRoles,
@@ -80,6 +66,4 @@ module.exports = {
   EXPIRATION,
   EXECUTION_ID_STORAGE_SLOT,
   CONSUMING_SCHEDULE_STORAGE_SLOT,
-  prepareOperation,
-  hashOperation,
 };

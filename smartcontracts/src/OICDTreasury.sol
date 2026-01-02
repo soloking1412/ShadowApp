@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts-upgradeable/token/ERC1155/ERC1155Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
@@ -7,12 +7,22 @@ import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+
+/**
+ * @title IPriceOracle
+ * @notice Interface for price oracle feeds
+ */
+interface IPriceOracle {
+    function getPrice() external view returns (uint256 price, uint256 timestamp);
+}
 
 /**
  * @title OICDTreasury - COMPLETE PRODUCTION VERSION
  * @notice Multi-currency treasury system with full reserve management
  */
-contract OICDTreasury is 
+contract OICDTreasury is
     Initializable,
     ERC1155Upgradeable,
     AccessControlUpgradeable,
@@ -20,6 +30,8 @@ contract OICDTreasury is
     ReentrancyGuard,
     UUPSUpgradeable
 {
+    using SafeERC20 for IERC20;
+
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
     bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
     bytes32 public constant BURNER_ROLE = keccak256("BURNER_ROLE");
@@ -27,7 +39,7 @@ contract OICDTreasury is
     bytes32 public constant BRIDGE_ROLE = keccak256("BRIDGE_ROLE");
     bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
     
-    // Currency IDs
+    // Currency IDs - Original Currencies
     uint256 public constant USD = 1;
     uint256 public constant EUR = 2;
     uint256 public constant GBP = 3;
@@ -37,6 +49,45 @@ contract OICDTreasury is
     uint256 public constant AUD = 7;
     uint256 public constant CAD = 8;
     uint256 public constant OTD = 9;
+
+    // New Currency IDs - Additional Countries
+    uint256 public constant RUB = 10;  // Russia
+    uint256 public constant IDR = 11;  // Indonesia
+    uint256 public constant MMK = 12;  // Myanmar
+    uint256 public constant THB = 13;  // Thailand
+    uint256 public constant SGD = 14;  // Singapore
+    uint256 public constant EGP = 15;  // Egypt
+    uint256 public constant LYD = 16;  // Libya
+    uint256 public constant LBP = 17;  // Lebanon
+    uint256 public constant ILS = 18;  // Palestine (using Israeli Shekel as proxy)
+    uint256 public constant JOD = 19;  // Jordan
+    uint256 public constant BAM = 20;  // Bosnia
+    uint256 public constant SYP = 21;  // Syria
+    uint256 public constant ALL = 22;  // Albania
+    uint256 public constant BRL = 23;  // Brazil
+    uint256 public constant GEL = 24;  // Georgia
+    uint256 public constant DZD = 25;  // Algeria
+    // JPY already exists as 4
+    uint256 public constant MAD = 26;  // Morocco
+    uint256 public constant KRW = 27;  // South Korea
+    uint256 public constant AMD = 28;  // Armenia
+    uint256 public constant NGN = 29;  // Nigeria
+    uint256 public constant INR = 30;  // India
+    uint256 public constant CLP = 31;  // Chile
+    uint256 public constant ARS = 32;  // Argentina
+    uint256 public constant ZAR = 33;  // South Africa
+    uint256 public constant TND = 34;  // Tunisia
+    uint256 public constant COP = 35;  // Colombia
+    uint256 public constant VES = 36;  // Venezuela
+    uint256 public constant BOB = 37;  // Bolivia
+    uint256 public constant MXN = 38;  // Mexico
+    uint256 public constant SAR = 39;  // Saudi Arabia
+    uint256 public constant QAR = 40;  // Qatar
+    uint256 public constant KWD = 41;  // Kuwait
+    uint256 public constant OMR = 42;  // Oman
+    uint256 public constant YER = 43;  // Yemen
+    uint256 public constant IQD = 44;  // Iraq
+    uint256 public constant IRR = 45;  // Iran
     
     struct Currency {
         uint256 currencyId;
@@ -93,17 +144,20 @@ contract OICDTreasury is
     mapping(address => mapping(uint256 => FrozenBalance)) public frozenBalances;
     mapping(address => ComplianceCheck) public complianceStatus;
     mapping(bytes32 => bool) public processedTransactions;
-    
+    mapping(uint256 => uint256) public lastOraclePrice; // SECURITY: Track last valid price
+
     Transaction[] public transactionHistory;
     
     uint256 public transactionCounter;
     uint256 public constant BASIS_POINTS = 10000;
     uint256 public constant PRECISION = 1e18;
-    
+    uint256 public constant MAX_ORACLE_AGE = 1 hours; // SECURITY: Oracle staleness check
+    uint256 public constant MAX_PRICE_DEVIATION = 1000; // SECURITY: 10% max price change
+
     uint256 public totalReserveValue;
     uint256 public minReserveRatio;
     uint256 public emergencyReserveRatio;
-    
+
     bool public emergencyMode;
     
     // Events
@@ -178,17 +232,57 @@ contract OICDTreasury is
         
         minReserveRatio = 12000;           // 120%
         emergencyReserveRatio = 10000;     // 100%
-        
-        // Initialize currencies
-        _initializeCurrency(USD, "OICD-USD", "OICD US Dollar", _dailyMintLimit, 15000);
-        _initializeCurrency(EUR, "OICD-EUR", "OICD Euro", _dailyMintLimit, 15000);
-        _initializeCurrency(GBP, "OICD-GBP", "OICD British Pound", _dailyMintLimit, 15000);
-        _initializeCurrency(JPY, "OICD-JPY", "OICD Japanese Yen", _dailyMintLimit, 15000);
-        _initializeCurrency(CHF, "OICD-CHF", "OICD Swiss Franc", _dailyMintLimit, 15000);
-        _initializeCurrency(CNY, "OICD-CNY", "OICD Chinese Yuan", _dailyMintLimit, 15000);
-        _initializeCurrency(AUD, "OICD-AUD", "OICD Australian Dollar", _dailyMintLimit, 15000);
-        _initializeCurrency(CAD, "OICD-CAD", "OICD Canadian Dollar", _dailyMintLimit, 15000);
-        _initializeCurrency(OTD, "OTD", "On-Trade Digital Dollar", _dailyMintLimit, 15000);
+
+        // Initialize original currencies with 250B mint limit
+        uint256 mintLimit = 250_000_000_000 * 1e18; // 250 Billion
+
+        _initializeCurrency(USD, "OICD-USD", "OICD US Dollar", mintLimit, 15000);
+        _initializeCurrency(EUR, "OICD-EUR", "OICD Euro", mintLimit, 15000);
+        _initializeCurrency(GBP, "OICD-GBP", "OICD British Pound", mintLimit, 15000);
+        _initializeCurrency(JPY, "OICD-JPY", "OICD Japanese Yen", mintLimit, 15000);
+        _initializeCurrency(CHF, "OICD-CHF", "OICD Swiss Franc", mintLimit, 15000);
+        _initializeCurrency(CNY, "OICD-CNY", "OICD Chinese Yuan", mintLimit, 15000);
+        _initializeCurrency(AUD, "OICD-AUD", "OICD Australian Dollar", mintLimit, 15000);
+        _initializeCurrency(CAD, "OICD-CAD", "OICD Canadian Dollar", mintLimit, 15000);
+        _initializeCurrency(OTD, "OTD", "On-Trade Digital Dollar", mintLimit, 15000);
+
+        // Initialize new currencies with 250B mint limit
+        _initializeCurrency(RUB, "OICD-RUB", "OICD Russian Ruble", mintLimit, 15000);
+        _initializeCurrency(IDR, "OICD-IDR", "OICD Indonesian Rupiah", mintLimit, 15000);
+        _initializeCurrency(MMK, "OICD-MMK", "OICD Myanmar Kyat", mintLimit, 15000);
+        _initializeCurrency(THB, "OICD-THB", "OICD Thai Baht", mintLimit, 15000);
+        _initializeCurrency(SGD, "OICD-SGD", "OICD Singapore Dollar", mintLimit, 15000);
+        _initializeCurrency(EGP, "OICD-EGP", "OICD Egyptian Pound", mintLimit, 15000);
+        _initializeCurrency(LYD, "OICD-LYD", "OICD Libyan Dinar", mintLimit, 15000);
+        _initializeCurrency(LBP, "OICD-LBP", "OICD Lebanese Pound", mintLimit, 15000);
+        _initializeCurrency(ILS, "OICD-ILS", "OICD Israeli Shekel", mintLimit, 15000);
+        _initializeCurrency(JOD, "OICD-JOD", "OICD Jordanian Dinar", mintLimit, 15000);
+        _initializeCurrency(BAM, "OICD-BAM", "OICD Bosnia Mark", mintLimit, 15000);
+        _initializeCurrency(SYP, "OICD-SYP", "OICD Syrian Pound", mintLimit, 15000);
+        _initializeCurrency(ALL, "OICD-ALL", "OICD Albanian Lek", mintLimit, 15000);
+        _initializeCurrency(BRL, "OICD-BRL", "OICD Brazilian Real", mintLimit, 15000);
+        _initializeCurrency(GEL, "OICD-GEL", "OICD Georgian Lari", mintLimit, 15000);
+        _initializeCurrency(DZD, "OICD-DZD", "OICD Algerian Dinar", mintLimit, 15000);
+        _initializeCurrency(MAD, "OICD-MAD", "OICD Moroccan Dirham", mintLimit, 15000);
+        _initializeCurrency(KRW, "OICD-KRW", "OICD South Korean Won", mintLimit, 15000);
+        _initializeCurrency(AMD, "OICD-AMD", "OICD Armenian Dram", mintLimit, 15000);
+        _initializeCurrency(NGN, "OICD-NGN", "OICD Nigerian Naira", mintLimit, 15000);
+        _initializeCurrency(INR, "OICD-INR", "OICD Indian Rupee", mintLimit, 15000);
+        _initializeCurrency(CLP, "OICD-CLP", "OICD Chilean Peso", mintLimit, 15000);
+        _initializeCurrency(ARS, "OICD-ARS", "OICD Argentine Peso", mintLimit, 15000);
+        _initializeCurrency(ZAR, "OICD-ZAR", "OICD South African Rand", mintLimit, 15000);
+        _initializeCurrency(TND, "OICD-TND", "OICD Tunisian Dinar", mintLimit, 15000);
+        _initializeCurrency(COP, "OICD-COP", "OICD Colombian Peso", mintLimit, 15000);
+        _initializeCurrency(VES, "OICD-VES", "OICD Venezuelan Bolivar", mintLimit, 15000);
+        _initializeCurrency(BOB, "OICD-BOB", "OICD Bolivian Boliviano", mintLimit, 15000);
+        _initializeCurrency(MXN, "OICD-MXN", "OICD Mexican Peso", mintLimit, 15000);
+        _initializeCurrency(SAR, "OICD-SAR", "OICD Saudi Riyal", mintLimit, 15000);
+        _initializeCurrency(QAR, "OICD-QAR", "OICD Qatari Riyal", mintLimit, 15000);
+        _initializeCurrency(KWD, "OICD-KWD", "OICD Kuwaiti Dinar", mintLimit, 15000);
+        _initializeCurrency(OMR, "OICD-OMR", "OICD Omani Rial", mintLimit, 15000);
+        _initializeCurrency(YER, "OICD-YER", "OICD Yemeni Rial", mintLimit, 15000);
+        _initializeCurrency(IQD, "OICD-IQD", "OICD Iraqi Dinar", mintLimit, 15000);
+        _initializeCurrency(IRR, "OICD-IRR", "OICD Iranian Rial", mintLimit, 15000);
     }
     
     function _initializeCurrency(
@@ -317,14 +411,14 @@ contract OICDTreasury is
     
     function _checkCompliance(address user) internal view {
         ComplianceCheck storage compliance = complianceStatus[user];
-        
+
         // Allow admins and system roles to bypass
-        if (hasRole(ADMIN_ROLE, user) || 
-            hasRole(MINTER_ROLE, user) || 
+        if (hasRole(ADMIN_ROLE, user) ||
+            hasRole(MINTER_ROLE, user) ||
             hasRole(BRIDGE_ROLE, user)) {
             return;
         }
-        
+
         require(compliance.kycVerified, "KYC not verified");
         require(!compliance.sanctioned, "Address sanctioned");
         require(
@@ -332,7 +426,38 @@ contract OICDTreasury is
             "Compliance check expired"
         );
     }
-    
+
+    // SECURITY: Oracle validation to prevent price manipulation
+    function _validateOraclePrice(uint256 currencyId) internal returns (uint256) {
+        Currency storage currency = currencies[currencyId];
+        require(currency.oracle != address(0), "Oracle not set");
+
+        (uint256 price, uint256 timestamp) = IPriceOracle(currency.oracle).getPrice();
+
+        // Check price staleness
+        require(
+            block.timestamp - timestamp <= MAX_ORACLE_AGE,
+            "Oracle price too old"
+        );
+
+        // Check price deviation (if we have a previous price)
+        uint256 lastPrice = lastOraclePrice[currencyId];
+        if (lastPrice > 0) {
+            uint256 priceDiff = price > lastPrice ? price - lastPrice : lastPrice - price;
+            uint256 percentChange = (priceDiff * BASIS_POINTS) / lastPrice;
+
+            require(
+                percentChange <= MAX_PRICE_DEVIATION,
+                "Price deviation too high"
+            );
+        }
+
+        // Update last price
+        lastOraclePrice[currencyId] = price;
+
+        return price;
+    }
+
     // ============ BURNING (Complete Implementation) ============
     
     function burn(
@@ -416,9 +541,9 @@ contract OICDTreasury is
         require(currencies[currencyId].active, "Currency inactive");
         require(assetAddress != address(0), "Invalid asset");
         require(amount > 0 && valuation > 0, "Invalid amounts");
-        
-        // Transfer asset to contract
-        IERC20(assetAddress).transferFrom(msg.sender, address(this), amount);
+
+        // Transfer asset to contract - Using SafeERC20
+        IERC20(assetAddress).safeTransferFrom(msg.sender, address(this), amount);
         
         // Add to reserves
         reserves[currencyId].push(Reserve({
@@ -465,9 +590,9 @@ contract OICDTreasury is
             newRatio >= minReserveRatio,
             "Would breach minimum reserve ratio"
         );
-        
-        // Transfer asset back
-        IERC20(reserve.assetAddress).transfer(msg.sender, amount);
+
+        // Transfer asset back - Using SafeERC20
+        IERC20(reserve.assetAddress).safeTransfer(msg.sender, amount);
         
         // Update reserve
         reserve.amount -= amount;
@@ -833,10 +958,4 @@ contract OICDTreasury is
             }
         }
     }
-}
-
-interface IERC20 {
-    function transferFrom(address from, address to, uint256 amount) external returns (bool);
-    function transfer(address to, uint256 amount) external returns (bool);
-    function balanceOf(address account) external view returns (uint256);
 }

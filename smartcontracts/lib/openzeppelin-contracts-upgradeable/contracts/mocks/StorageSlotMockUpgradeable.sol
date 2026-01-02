@@ -1,13 +1,11 @@
 // SPDX-License-Identifier: MIT
-// This file was procedurally generated from scripts/generate/templates/StorageSlotMock.js.
 
 pragma solidity ^0.8.20;
 
-import {MulticallUpgradeable} from "../utils/MulticallUpgradeable.sol";
 import {StorageSlot} from "@openzeppelin/contracts/utils/StorageSlot.sol";
-import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
+import {Initializable} from "../proxy/utils/Initializable.sol";
 
-contract StorageSlotMockUpgradeable is Initializable, MulticallUpgradeable {
+contract StorageSlotMockUpgradeable is Initializable {
     using StorageSlot for *;
 
     function __StorageSlotMock_init() internal onlyInitializing {
@@ -15,49 +13,41 @@ contract StorageSlotMockUpgradeable is Initializable, MulticallUpgradeable {
 
     function __StorageSlotMock_init_unchained() internal onlyInitializing {
     }
-    function setAddressSlot(bytes32 slot, address value) public {
-        slot.getAddressSlot().value = value;
-    }
-
-    function setBooleanSlot(bytes32 slot, bool value) public {
+    function setBoolean(bytes32 slot, bool value) public {
         slot.getBooleanSlot().value = value;
     }
 
-    function setBytes32Slot(bytes32 slot, bytes32 value) public {
+    function setAddress(bytes32 slot, address value) public {
+        slot.getAddressSlot().value = value;
+    }
+
+    function setBytes32(bytes32 slot, bytes32 value) public {
         slot.getBytes32Slot().value = value;
     }
 
-    function setUint256Slot(bytes32 slot, uint256 value) public {
+    function setUint256(bytes32 slot, uint256 value) public {
         slot.getUint256Slot().value = value;
     }
 
-    function setInt256Slot(bytes32 slot, int256 value) public {
-        slot.getInt256Slot().value = value;
-    }
-
-    function getAddressSlot(bytes32 slot) public view returns (address) {
-        return slot.getAddressSlot().value;
-    }
-
-    function getBooleanSlot(bytes32 slot) public view returns (bool) {
+    function getBoolean(bytes32 slot) public view returns (bool) {
         return slot.getBooleanSlot().value;
     }
 
-    function getBytes32Slot(bytes32 slot) public view returns (bytes32) {
+    function getAddress(bytes32 slot) public view returns (address) {
+        return slot.getAddressSlot().value;
+    }
+
+    function getBytes32(bytes32 slot) public view returns (bytes32) {
         return slot.getBytes32Slot().value;
     }
 
-    function getUint256Slot(bytes32 slot) public view returns (uint256) {
+    function getUint256(bytes32 slot) public view returns (uint256) {
         return slot.getUint256Slot().value;
-    }
-
-    function getInt256Slot(bytes32 slot) public view returns (int256) {
-        return slot.getInt256Slot().value;
     }
 
     mapping(uint256 key => string) public stringMap;
 
-    function setStringSlot(bytes32 slot, string calldata value) public {
+    function setString(bytes32 slot, string calldata value) public {
         slot.getStringSlot().value = value;
     }
 
@@ -65,7 +55,7 @@ contract StorageSlotMockUpgradeable is Initializable, MulticallUpgradeable {
         stringMap[key].getStringSlot().value = value;
     }
 
-    function getStringSlot(bytes32 slot) public view returns (string memory) {
+    function getString(bytes32 slot) public view returns (string memory) {
         return slot.getStringSlot().value;
     }
 
@@ -75,7 +65,7 @@ contract StorageSlotMockUpgradeable is Initializable, MulticallUpgradeable {
 
     mapping(uint256 key => bytes) public bytesMap;
 
-    function setBytesSlot(bytes32 slot, bytes calldata value) public {
+    function setBytes(bytes32 slot, bytes calldata value) public {
         slot.getBytesSlot().value = value;
     }
 
@@ -83,7 +73,7 @@ contract StorageSlotMockUpgradeable is Initializable, MulticallUpgradeable {
         bytesMap[key].getBytesSlot().value = value;
     }
 
-    function getBytesSlot(bytes32 slot) public view returns (bytes memory) {
+    function getBytes(bytes32 slot) public view returns (bytes memory) {
         return slot.getBytesSlot().value;
     }
 

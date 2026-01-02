@@ -7,12 +7,12 @@ import {IAuthority} from "../access/manager/IAuthority.sol";
 
 contract NotAuthorityMock is IAuthority {
     function canCall(address /* caller */, address /* target */, bytes4 /* selector */) external pure returns (bool) {
-        revert("NotAuthorityMock: not implemented");
+        revert("AuthorityNoDelayMock: not implemented");
     }
 }
 
 contract AuthorityNoDelayMock is IAuthority {
-    bool private _immediate;
+    bool _immediate;
 
     function canCall(
         address /* caller */,
@@ -28,14 +28,14 @@ contract AuthorityNoDelayMock is IAuthority {
 }
 
 contract AuthorityDelayMock {
-    bool private _immediate;
-    uint256 private _delay;
+    bool _immediate;
+    uint32 _delay;
 
     function canCall(
         address /* caller */,
         address /* target */,
         bytes4 /* selector */
-    ) external view returns (bool immediate, uint256 delay) {
+    ) external view returns (bool immediate, uint32 delay) {
         return (_immediate, _delay);
     }
 
@@ -43,7 +43,7 @@ contract AuthorityDelayMock {
         _immediate = immediate;
     }
 
-    function _setDelay(uint256 delay) external {
+    function _setDelay(uint32 delay) external {
         _delay = delay;
     }
 }
@@ -52,7 +52,7 @@ contract AuthorityNoResponse {
     function canCall(address /* caller */, address /* target */, bytes4 /* selector */) external view {}
 }
 
-contract AuthorityObserveIsConsuming {
+contract AuthoritiyObserveIsConsuming {
     event ConsumeScheduledOpCalled(address caller, bytes data, bytes4 isConsuming);
 
     function canCall(

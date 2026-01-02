@@ -1,44 +1,38 @@
-const { ethers } = require('hardhat');
-const { expect } = require('chai');
-const { loadFixture } = require('@nomicfoundation/hardhat-network-helpers');
+const { BN, expectEvent } = require('@openzeppelin/test-helpers');
 
-async function fixture() {
-  return { contextHelper: await ethers.deployContract('ContextMockCaller', []) };
-}
-function shouldBehaveLikeRegularContext() {
-  beforeEach(async function () {
-    Object.assign(this, await loadFixture(fixture));
-  });
+const ContextMock = artifacts.require('ContextMock');
 
+function shouldBehaveLikeRegularContext(sender) {
   describe('msgSender', function () {
     it('returns the transaction sender when called from an EOA', async function () {
-      await expect(this.context.connect(this.sender).msgSender()).to.emit(this.context, 'Sender').withArgs(this.sender);
+      const receipt = await this.context.msgSender({ from: sender });
+      expectEvent(receipt, 'Sender', { sender });
     });
 
-    it('returns the transaction sender when called from another contract', async function () {
-      await expect(this.contextHelper.connect(this.sender).callSender(this.context))
-        .to.emit(this.context, 'Sender')
-        .withArgs(this.contextHelper);
+    it('returns the transaction sender when from another contract', async function () {
+      const { tx } = await this.caller.callSender(this.context.address, { from: sender });
+      await expectEvent.inTransaction(tx, ContextMock, 'Sender', { sender: this.caller.address });
     });
   });
 
   describe('msgData', function () {
-    const args = [42n, 'OpenZeppelin'];
+    const integerValue = new BN('42');
+    const stringValue = 'OpenZeppelin';
+
+    let callData;
+
+    beforeEach(async function () {
+      callData = this.context.contract.methods.msgData(integerValue.toString(), stringValue).encodeABI();
+    });
 
     it('returns the transaction data when called from an EOA', async function () {
-      const callData = this.context.interface.encodeFunctionData('msgData', args);
-
-      await expect(this.context.msgData(...args))
-        .to.emit(this.context, 'Data')
-        .withArgs(callData, ...args);
+      const receipt = await this.context.msgData(integerValue, stringValue);
+      expectEvent(receipt, 'Data', { data: callData, integerValue, stringValue });
     });
 
     it('returns the transaction sender when from another contract', async function () {
-      const callData = this.context.interface.encodeFunctionData('msgData', args);
-
-      await expect(this.contextHelper.callData(this.context, ...args))
-        .to.emit(this.context, 'Data')
-        .withArgs(callData, ...args);
+      const { tx } = await this.caller.callData(this.context.address, integerValue, stringValue);
+      await expectEvent.inTransaction(tx, ContextMock, 'Data', { data: callData, integerValue, stringValue });
     });
   });
 }

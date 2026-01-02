@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Contracts (last updated v5.4.0) (governance/extensions/GovernorSettings.sol)
+// OpenZeppelin Contracts (last updated v5.0.0) (governance/extensions/GovernorSettings.sol)
 
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.20;
 
-import {IGovernor, Governor} from "../Governor.sol";
+import {Governor} from "../Governor.sol";
 
 /**
  * @dev Extension of {Governor} for settings updatable through governance.
@@ -29,17 +29,23 @@ abstract contract GovernorSettings is Governor {
         _setProposalThreshold(initialProposalThreshold);
     }
 
-    /// @inheritdoc IGovernor
+    /**
+     * @dev See {IGovernor-votingDelay}.
+     */
     function votingDelay() public view virtual override returns (uint256) {
         return _votingDelay;
     }
 
-    /// @inheritdoc IGovernor
+    /**
+     * @dev See {IGovernor-votingPeriod}.
+     */
     function votingPeriod() public view virtual override returns (uint256) {
         return _votingPeriod;
     }
 
-    /// @inheritdoc Governor
+    /**
+     * @dev See {Governor-proposalThreshold}.
+     */
     function proposalThreshold() public view virtual override returns (uint256) {
         return _proposalThreshold;
     }
