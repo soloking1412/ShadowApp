@@ -1,0 +1,1 @@
+Error: Internal transport error: Socket operation on non-socket (os error 38) with /Users/soloking/ShadowDapp-Fullstack/smartcontracts/

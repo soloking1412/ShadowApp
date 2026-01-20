@@ -12,6 +12,10 @@ import FractionalReserveDashboard from '@/components/banking/FractionalReserveDa
 import ForexReservesTracker from '@/components/forex/ForexReservesTracker';
 import GovernanceDashboard from '@/components/dao/GovernanceDashboard';
 import ChatWindow from '@/components/chat/ChatWindow';
+import PublicLobby from '@/components/lobby/PublicLobby';
+import MediaMonitor from '@/components/media/MediaMonitor';
+import SecureChat from '@/components/chat/SecureChat';
+import BlacklistRegistry from '@/components/registry/BlacklistRegistry';
 
 type Section =
   | 'overview'
@@ -21,7 +25,10 @@ type Section =
   | 'banking'
   | 'forex'
   | 'governance'
-  | 'chat';
+  | 'chat'
+  | 'lobby'
+  | 'media'
+  | 'registry';
 
 export default function Home() {
   const [activeSection, setActiveSection] = useState<Section>('overview');
@@ -35,6 +42,10 @@ export default function Home() {
     { id: 'banking' as Section, name: 'Banking', icon: '🏦' },
     { id: 'forex' as Section, name: 'Forex', icon: '💱' },
     { id: 'governance' as Section, name: 'Governance', icon: '🏛️' },
+    { id: 'lobby' as Section, name: 'Public Lobby', icon: '🗣️' },
+    { id: 'media' as Section, name: 'Media Monitor', icon: '📰' },
+    { id: 'registry' as Section, name: 'OZF Registry', icon: '📋' },
+    { id: 'chat' as Section, name: 'Secure Chat', icon: '💬' },
   ];
 
   return (
@@ -48,7 +59,7 @@ export default function Home() {
               </div>
               <div>
                 <h1 className="text-xl font-bold text-white">ShadowDapp</h1>
-                <p className="text-xs text-gray-400">Global Financial Infrastructure</p>
+                <p className="text-xs text-purple-400 font-semibold">OZF - OZHUMANILL ZAYED FEDERATION</p>
               </div>
             </div>
 
@@ -106,23 +117,23 @@ export default function Home() {
                   <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                     <div className="p-6 bg-gradient-to-br from-blue-500/20 to-blue-600/20 border border-blue-500/30 rounded-xl">
                       <div className="text-3xl mb-2">💰</div>
-                      <p className="text-sm text-gray-400 mb-1">Total Value Locked</p>
-                      <p className="text-2xl font-bold text-white">$12.8T</p>
+                      <p className="text-sm text-gray-400 mb-1">Deployed Contracts</p>
+                      <p className="text-2xl font-bold text-white">6</p>
                     </div>
                     <div className="p-6 bg-gradient-to-br from-green-500/20 to-green-600/20 border border-green-500/30 rounded-xl">
                       <div className="text-3xl mb-2">🌍</div>
-                      <p className="text-sm text-gray-400 mb-1">Active Countries</p>
+                      <p className="text-sm text-gray-400 mb-1">Supported Currencies</p>
                       <p className="text-2xl font-bold text-white">46</p>
                     </div>
                     <div className="p-6 bg-gradient-to-br from-purple-500/20 to-purple-600/20 border border-purple-500/30 rounded-xl">
                       <div className="text-3xl mb-2">📈</div>
-                      <p className="text-sm text-gray-400 mb-1">Trading Volume (24h)</p>
-                      <p className="text-2xl font-bold text-white">$4.2B</p>
+                      <p className="text-sm text-gray-400 mb-1">Network</p>
+                      <p className="text-2xl font-bold text-white">Arbitrum</p>
                     </div>
                     <div className="p-6 bg-gradient-to-br from-amber-500/20 to-amber-600/20 border border-amber-500/30 rounded-xl">
                       <div className="text-3xl mb-2">🏛️</div>
-                      <p className="text-sm text-gray-400 mb-1">Active Proposals</p>
-                      <p className="text-2xl font-bold text-white">12</p>
+                      <p className="text-sm text-gray-400 mb-1">Testnet</p>
+                      <p className="text-2xl font-bold text-white">Sepolia</p>
                     </div>
                   </div>
                 </div>
@@ -151,42 +162,36 @@ export default function Home() {
                   </div>
 
                   <div className="glass rounded-xl p-6">
-                    <h3 className="text-xl font-bold text-white mb-4">Quick Stats</h3>
+                    <h3 className="text-xl font-bold text-white mb-4">Platform Status</h3>
                     <div className="space-y-4">
                       <div className="p-4 bg-white/5 rounded-lg">
                         <div className="flex justify-between items-center mb-2">
-                          <span className="text-sm text-gray-400">Mint Limit per Currency</span>
-                          <span className="text-white font-bold">250B</span>
-                        </div>
-                        <div className="w-full bg-white/10 rounded-full h-2">
-                          <div className="bg-green-500 h-2 rounded-full" style={{ width: '68%' }} />
-                        </div>
-                      </div>
-                      <div className="p-4 bg-white/5 rounded-lg">
-                        <div className="flex justify-between items-center mb-2">
-                          <span className="text-sm text-gray-400">Reserve Utilization</span>
-                          <span className="text-white font-bold">72.4%</span>
-                        </div>
-                        <div className="w-full bg-white/10 rounded-full h-2">
-                          <div className="bg-blue-500 h-2 rounded-full" style={{ width: '72%' }} />
+                          <span className="text-sm text-gray-400">Smart Contracts</span>
+                          <span className="text-green-400 font-bold flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+                            Deployed
+                          </span>
                         </div>
                       </div>
                       <div className="p-4 bg-white/5 rounded-lg">
                         <div className="flex justify-between items-center mb-2">
-                          <span className="text-sm text-gray-400">Ministry Quorum</span>
-                          <span className="text-white font-bold">55%</span>
-                        </div>
-                        <div className="w-full bg-white/10 rounded-full h-2">
-                          <div className="bg-purple-500 h-2 rounded-full" style={{ width: '55%' }} />
+                          <span className="text-sm text-gray-400">Network Status</span>
+                          <span className="text-green-400 font-bold flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+                            Online
+                          </span>
                         </div>
                       </div>
                       <div className="p-4 bg-white/5 rounded-lg">
                         <div className="flex justify-between items-center mb-2">
-                          <span className="text-sm text-gray-400">Dark Pool Liquidity</span>
-                          <span className="text-white font-bold">94.2%</span>
+                          <span className="text-sm text-gray-400">Chain ID</span>
+                          <span className="text-white font-bold">421614</span>
                         </div>
-                        <div className="w-full bg-white/10 rounded-full h-2">
-                          <div className="bg-amber-500 h-2 rounded-full" style={{ width: '94%' }} />
+                      </div>
+                      <div className="p-4 bg-white/5 rounded-lg">
+                        <div className="flex justify-between items-center mb-2">
+                          <span className="text-sm text-gray-400">Environment</span>
+                          <span className="text-blue-400 font-bold">Testnet</span>
                         </div>
                       </div>
                     </div>
@@ -219,6 +224,14 @@ export default function Home() {
             {activeSection === 'forex' && <ForexReservesTracker />}
 
             {activeSection === 'governance' && <GovernanceDashboard />}
+
+            {activeSection === 'lobby' && <PublicLobby />}
+
+            {activeSection === 'media' && <MediaMonitor />}
+
+            {activeSection === 'registry' && <BlacklistRegistry />}
+
+            {activeSection === 'chat' && <SecureChat />}
           </main>
         </div>
       </div>
@@ -276,8 +289,9 @@ export default function Home() {
               </div>
             </div>
           </div>
-          <div className="mt-8 pt-8 border-t border-white/10 text-center text-sm text-gray-400">
-            <p>© 2025 ShadowDapp. All rights reserved.</p>
+          <div className="mt-8 pt-8 border-t border-white/10 text-center">
+            <p className="text-sm text-purple-400 font-semibold mb-1">OZHUMANILL ZAYED FEDERATION (OZF)</p>
+            <p className="text-sm text-gray-400">© 2025 ShadowDapp. All rights reserved.</p>
           </div>
         </div>
       </footer>

@@ -1,9 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
 import { CONTRACTS, CURRENCY_NAMES } from '@/lib/contracts';
-import { formatEther, parseEther } from 'viem';
+import { formatEther, parseEther, formatUnits } from 'viem';
+import { OICDTreasuryABI } from '@/lib/abis';
 
 export default function TreasuryDashboard() {
   const { address } = useAccount();
@@ -14,13 +15,30 @@ export default function TreasuryDashboard() {
   const { writeContract, data: hash } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
 
+  // Read currency data from contract
+  const { data: currencyData } = useReadContract({
+    address: CONTRACTS.OICDTreasury,
+    abi: OICDTreasuryABI,
+    functionName: 'currencies',
+    args: [BigInt(selectedCurrency)],
+  });
+
+  // Read user balance for selected currency
+  const { data: userBalance } = useReadContract({
+    address: CONTRACTS.OICDTreasury,
+    abi: OICDTreasuryABI,
+    functionName: 'balanceOf',
+    args: address ? [address, BigInt(selectedCurrency)] : undefined,
+    query: { enabled: !!address },
+  });
+
   const handleMint = async () => {
     if (!recipient || !mintAmount) return;
 
     try {
       writeContract({
         address: CONTRACTS.OICDTreasury,
-        abi: TREASURY_ABI,
+        abi: OICDTreasuryABI,
         functionName: 'mint',
         args: [recipient as `0x${string}`, BigInt(selectedCurrency), parseEther(mintAmount), '0x'],
       });
@@ -30,7 +48,25 @@ export default function TreasuryDashboard() {
   };
 
   const currencies = Object.entries(CURRENCY_NAMES);
-  const mintLimit = '250,000,000,000';
+
+  // Get mint limit from currency data or use default
+  const mintLimit = useMemo(() => {
+    if (currencyData && Array.isArray(currencyData) && currencyData[6]) {
+      return formatUnits(currencyData[6] as bigint, 18);
+    }
+    return '250000000000';
+  }, [currencyData]);
+
+  // Get total supply from currency data
+  const totalSupply = useMemo(() => {
+    if (currencyData && Array.isArray(currencyData) && currencyData[3]) {
+      return formatUnits(currencyData[3] as bigint, 18);
+    }
+    return '0';
+  }, [currencyData]);
+
+  // Count of active currencies
+  const activeCurrencies = currencies.length;
 
   return (
     <div className="space-y-6">
@@ -41,18 +77,18 @@ export default function TreasuryDashboard() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
           <div className="p-4 bg-gradient-to-br from-blue-500/20 to-purple-500/20 border border-blue-500/30 rounded-lg">
             <p className="text-sm text-gray-400 mb-1">Total Currencies</p>
-            <p className="text-3xl font-bold text-white">45</p>
+            <p className="text-3xl font-bold text-white">{activeCurrencies}</p>
             <p className="text-xs text-blue-400 mt-1">Active globally</p>
           </div>
           <div className="p-4 bg-gradient-to-br from-green-500/20 to-emerald-500/20 border border-green-500/30 rounded-lg">
-            <p className="text-sm text-gray-400 mb-1">Mint Limit per Currency</p>
-            <p className="text-3xl font-bold text-white">{mintLimit}</p>
-            <p className="text-xs text-green-400 mt-1">OICD/OTD tokens</p>
+            <p className="text-sm text-gray-400 mb-1">Mint Limit ({CURRENCY_NAMES[selectedCurrency]})</p>
+            <p className="text-3xl font-bold text-white">{parseFloat(mintLimit).toLocaleString()}</p>
+            <p className="text-xs text-green-400 mt-1">Tokens</p>
           </div>
           <div className="p-4 bg-gradient-to-br from-amber-500/20 to-orange-500/20 border border-amber-500/30 rounded-lg">
-            <p className="text-sm text-gray-400 mb-1">MinMint Rate</p>
-            <p className="text-3xl font-bold text-white">185B</p>
-            <p className="text-xs text-amber-400 mt-1">USD/OICD/OTD</p>
+            <p className="text-sm text-gray-400 mb-1">Total Supply ({CURRENCY_NAMES[selectedCurrency]})</p>
+            <p className="text-3xl font-bold text-white">{parseFloat(totalSupply).toLocaleString()}</p>
+            <p className="text-xs text-amber-400 mt-1">Tokens minted</p>
           </div>
         </div>
       </div>
@@ -89,7 +125,7 @@ export default function TreasuryDashboard() {
 
           <div>
             <label className="block text-sm font-medium text-gray-400 mb-2">
-              Amount (Max: {mintLimit})
+              Amount
             </label>
             <input
               type="number"
@@ -98,6 +134,10 @@ export default function TreasuryDashboard() {
               placeholder="0.00"
               className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-primary-500"
             />
+            <p className="text-xs text-gray-400 mt-1">
+              Max: {parseFloat(mintLimit).toLocaleString()} |
+              {address && userBalance ? ` Your Balance: ${formatUnits(userBalance as bigint, 18)}` : ' Connect wallet to see balance'}
+            </p>
           </div>
 
           <button
@@ -137,7 +177,7 @@ export default function TreasuryDashboard() {
                 </span>
               </div>
               <div className="mt-2 pt-2 border-t border-white/10">
-                <p className="text-xs text-gray-400">Limit: {mintLimit}</p>
+                <p className="text-xs text-gray-400">Daily Limit: {parseFloat(mintLimit).toLocaleString()}</p>
               </div>
             </div>
           ))}
@@ -165,7 +205,7 @@ export default function TreasuryDashboard() {
             </li>
             <li className="flex items-center gap-2">
               <div className="w-1.5 h-1.5 rounded-full bg-purple-500" />
-              250B mint limit same as other currencies
+              Daily mint limit per currency
             </li>
           </ul>
         </div>
@@ -173,18 +213,3 @@ export default function TreasuryDashboard() {
     </div>
   );
 }
-
-const TREASURY_ABI = [
-  {
-    inputs: [
-      { name: 'to', type: 'address' },
-      { name: 'id', type: 'uint256' },
-      { name: 'amount', type: 'uint256' },
-      { name: 'data', type: 'bytes' },
-    ],
-    name: 'mint',
-    outputs: [],
-    stateMutability: 'nonpayable',
-    type: 'function',
-  },
-] as const;
