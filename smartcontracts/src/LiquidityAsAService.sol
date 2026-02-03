@@ -292,7 +292,8 @@ contract LiquidityAsAService is
         pool.totalLiquidity -= position.amount;
         pool.providerShares[msg.sender] -= position.shares;
 
-        payable(msg.sender).transfer(withdrawAmount);
+        (bool success, ) = payable(msg.sender).call{value: withdrawAmount}("");
+        require(success, "Withdrawal transfer failed");
 
         emit LiquidityWithdrawn(positionId, msg.sender, withdrawAmount);
     }

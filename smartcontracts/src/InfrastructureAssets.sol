@@ -106,19 +106,52 @@ contract InfrastructureAssets is
         uint256 revenue;
     }
 
+    struct PortInvestment {
+        uint256 assetId;
+        address investor;
+        uint256 shares;
+        uint256 investedAmount;
+        uint256 investmentDate;
+        uint256 lastClaimDate;
+        uint256 totalClaimed;
+    }
+
+    struct PortFinancials {
+        uint256 totalRevenue;
+        uint256 operatingCosts;
+        uint256 netProfit;
+        uint256 totalShares;
+        uint256 pricePerShare;
+        uint256 lastDividendDate;
+        uint256 dividendPerShare;
+    }
+
+    struct CorridorFinancials {
+        uint256 totalFreightValue;
+        uint256 totalFees;
+        uint256 investorPool;
+    }
+
     // State variables
     mapping(uint256 => InfrastructureAsset) public assets;
     mapping(uint256 => FreightCorridor) public corridors;
     mapping(uint256 => FreightMovement) public movements;
-    mapping(string => uint256) public codeToAssetId; // Quick lookup by code
-    mapping(string => uint256) public rinToMovementId; // RIN lookup
+    mapping(string => uint256) public codeToAssetId;
+    mapping(string => uint256) public rinToMovementId;
     mapping(uint256 => PortOperations) public operations;
+    mapping(uint256 => PortFinancials) public portFinancials;
+    mapping(uint256 => mapping(address => PortInvestment)) public portInvestments;
+    mapping(uint256 => address[]) public portInvestors;
+    mapping(uint256 => CorridorFinancials) public corridorFinancials;
+    mapping(uint256 => mapping(address => uint256)) public corridorInvestorShares;
+    mapping(uint256 => address[]) public corridorInvestors;
 
     uint256 public assetCounter;
     uint256 public corridorCounter;
     uint256 public movementCounter;
     uint256 public totalFreightVolume;
     uint256 public totalFreightValue;
+    uint256 public constant CORRIDOR_FEE_BASIS_POINTS = 100;
 
     // Events
     event AssetRegistered(
@@ -152,6 +185,14 @@ contract InfrastructureAssets is
         uint256 indexed movementId,
         uint256 actualArrival
     );
+
+    event PortInvestmentMade(uint256 indexed assetId, address indexed investor, uint256 amount, uint256 shares);
+    event PortRevenueRecorded(uint256 indexed assetId, uint256 revenue, uint256 costs);
+    event DividendDistributed(uint256 indexed assetId, uint256 totalDividend);
+    event DividendClaimed(uint256 indexed assetId, address indexed investor, uint256 amount);
+    event CorridorInvestmentMade(uint256 indexed corridorId, address indexed investor, uint256 amount);
+    event CorridorFeeCollected(uint256 indexed corridorId, uint256 fee, string rin);
+    event CorridorProfitDistributed(uint256 indexed corridorId, uint256 amount);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -265,11 +306,14 @@ contract InfrastructureAssets is
         uint256 value,
         uint256 estimatedArrival,
         string[] memory checkpoints
-    ) external whenNotPaused returns (uint256) {
+    ) external payable whenNotPaused returns (uint256) {
         require(corridors[corridorId].active, "Corridor not active");
         require(bytes(rin).length > 0, "Invalid RIN");
         require(rinToMovementId[rin] == 0, "RIN already exists");
         require(volume > 0, "Invalid volume");
+
+        uint256 corridorFee = (value * CORRIDOR_FEE_BASIS_POINTS) / 10000;
+        require(msg.value >= corridorFee, "Insufficient fee");
 
         uint256 movementId = ++movementCounter;
 
@@ -296,6 +340,11 @@ contract InfrastructureAssets is
         totalFreightVolume += volume;
         totalFreightValue += value;
 
+        CorridorFinancials storage financials = corridorFinancials[corridorId];
+        financials.totalFreightValue += value;
+        financials.totalFees += corridorFee;
+
+        emit CorridorFeeCollected(corridorId, corridorFee, rin);
         emit FreightDispatched(movementId, rin, msg.sender, corridorId);
 
         return movementId;
@@ -446,6 +495,156 @@ contract InfrastructureAssets is
         );
     }
 
+    function investInPort(uint256 assetId) external payable nonReentrant whenNotPaused {
+        require(msg.value > 0, "Must invest");
+        InfrastructureAsset storage asset = assets[assetId];
+        require(asset.assetType == AssetType.Seaport, "Not a port");
+        require(asset.status == AssetStatus.Active, "Port not active");
+
+        PortFinancials storage financials = portFinancials[assetId];
+
+        uint256 shares;
+        if (financials.totalShares == 0) {
+            shares = msg.value;
+            financials.pricePerShare = 1 ether;
+        } else {
+            shares = (msg.value * 1 ether) / financials.pricePerShare;
+        }
+
+        PortInvestment storage investment = portInvestments[assetId][msg.sender];
+        if (investment.investedAmount == 0) {
+            portInvestors[assetId].push(msg.sender);
+            investment.investor = msg.sender;
+            investment.assetId = assetId;
+            investment.investmentDate = block.timestamp;
+        }
+
+        investment.shares += shares;
+        investment.investedAmount += msg.value;
+        investment.lastClaimDate = block.timestamp;
+
+        financials.totalShares += shares;
+
+        emit PortInvestmentMade(assetId, msg.sender, msg.value, shares);
+    }
+
+    function recordPortRevenue(uint256 assetId, uint256 revenue, uint256 costs)
+        external
+        onlyRole(OPERATOR_ROLE)
+    {
+        PortOperations storage ops = operations[assetId];
+        PortFinancials storage financials = portFinancials[assetId];
+
+        ops.revenue += revenue;
+        financials.totalRevenue += revenue;
+        financials.operatingCosts += costs;
+        financials.netProfit = financials.totalRevenue - financials.operatingCosts;
+
+        emit PortRevenueRecorded(assetId, revenue, costs);
+    }
+
+    function distributePortDividends(uint256 assetId) external onlyRole(OPERATOR_ROLE) {
+        PortFinancials storage financials = portFinancials[assetId];
+        require(financials.totalShares > 0, "No shareholders");
+        require(financials.netProfit > 0, "No profit");
+
+        uint256 dividendPool = (financials.netProfit * 70) / 100;
+        uint256 dividendPerShare = (dividendPool * 1 ether) / financials.totalShares;
+
+        financials.dividendPerShare += dividendPerShare;
+        financials.lastDividendDate = block.timestamp;
+
+        emit DividendDistributed(assetId, dividendPool);
+    }
+
+    function claimPortDividends(uint256 assetId) external nonReentrant {
+        PortInvestment storage investment = portInvestments[assetId][msg.sender];
+        require(investment.shares > 0, "No investment");
+
+        PortFinancials storage financials = portFinancials[assetId];
+
+        uint256 totalDividends = (investment.shares * financials.dividendPerShare) / 1 ether;
+        uint256 unclaimed = totalDividends - investment.totalClaimed;
+
+        require(unclaimed > 0, "No dividends");
+        require(address(this).balance >= unclaimed, "Insufficient balance");
+
+        investment.totalClaimed += unclaimed;
+        investment.lastClaimDate = block.timestamp;
+
+        (bool success, ) = payable(msg.sender).call{value: unclaimed}("");
+        require(success, "Transfer failed");
+
+        emit DividendClaimed(assetId, msg.sender, unclaimed);
+    }
+
+    function investInCorridor(uint256 corridorId) external payable nonReentrant whenNotPaused {
+        require(msg.value > 0, "Must invest");
+        require(corridors[corridorId].active, "Corridor not active");
+
+        CorridorFinancials storage financials = corridorFinancials[corridorId];
+
+        if (corridorInvestorShares[corridorId][msg.sender] == 0) {
+            corridorInvestors[corridorId].push(msg.sender);
+        }
+
+        corridorInvestorShares[corridorId][msg.sender] += msg.value;
+        financials.investorPool += msg.value;
+
+        emit CorridorInvestmentMade(corridorId, msg.sender, msg.value);
+    }
+
+    function distributeCorridorProfits(uint256 corridorId) external onlyRole(OPERATOR_ROLE) nonReentrant {
+        CorridorFinancials storage financials = corridorFinancials[corridorId];
+        require(financials.totalFees > 0, "No fees");
+        require(financials.investorPool > 0, "No investors");
+
+        uint256 investorPayout = (financials.totalFees * 80) / 100;
+
+        address[] memory investors = corridorInvestors[corridorId];
+        for (uint256 i = 0; i < investors.length; i++) {
+            address investor = investors[i];
+            uint256 share = corridorInvestorShares[corridorId][investor];
+            uint256 payout = (investorPayout * share) / financials.investorPool;
+
+            if (payout > 0) {
+                (bool success, ) = payable(investor).call{value: payout}("");
+                require(success, "Transfer failed");
+            }
+        }
+
+        financials.totalFees = 0;
+
+        emit CorridorProfitDistributed(corridorId, investorPayout);
+    }
+
+    function getPortROI(uint256 assetId, address investor)
+        external
+        view
+        returns (uint256 invested, uint256 currentValue, uint256 claimed, int256 roi)
+    {
+        PortInvestment storage investment = portInvestments[assetId][investor];
+        PortFinancials storage financials = portFinancials[assetId];
+
+        invested = investment.investedAmount;
+        currentValue = (investment.shares * financials.pricePerShare) / 1 ether;
+        claimed = investment.totalClaimed;
+
+        uint256 totalValue = currentValue + claimed;
+        roi = int256((totalValue * 100) / invested) - 100;
+    }
+
+    function getCorridorProfitability(uint256 corridorId)
+        external
+        view
+        returns (uint256 totalFreight, uint256 totalFees, uint256 investorPool)
+    {
+        CorridorFinancials storage financials = corridorFinancials[corridorId];
+        totalFreight = financials.totalFreightValue;
+        totalFees = financials.totalFees;
+        investorPool = financials.investorPool;
+    }
+
     function pause() external onlyRole(ADMIN_ROLE) {
         _pause();
     }
@@ -453,4 +652,6 @@ contract InfrastructureAssets is
     function unpause() external onlyRole(ADMIN_ROLE) {
         _unpause();
     }
+
+    receive() external payable {}
 }

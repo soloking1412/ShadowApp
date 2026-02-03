@@ -7,7 +7,6 @@ import DarkPoolOrderForm from '@/components/trading/DarkPoolOrderForm';
 import CEXOrderBook from '@/components/trading/CEXOrderBook';
 import TreasuryDashboard from '@/components/treasury/TreasuryDashboard';
 import TwoDIBondManager from '@/components/bonds/TwoDIBondManager';
-import IBANBanking from '@/components/banking/IBANBanking';
 import FractionalReserveDashboard from '@/components/banking/FractionalReserveDashboard';
 import ForexReservesTracker from '@/components/forex/ForexReservesTracker';
 import GovernanceDashboard from '@/components/dao/GovernanceDashboard';
@@ -214,12 +213,7 @@ export default function Home() {
 
             {activeSection === 'bonds' && <TwoDIBondManager />}
 
-            {activeSection === 'banking' && (
-              <div className="space-y-6">
-                <IBANBanking />
-                <FractionalReserveDashboard />
-              </div>
-            )}
+            {activeSection === 'banking' && <FractionalReserveDashboard />}
 
             {activeSection === 'forex' && <ForexReservesTracker />}
 

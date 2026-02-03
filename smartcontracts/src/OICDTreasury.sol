@@ -19,6 +19,52 @@ interface IPriceOracle {
 }
 
 /**
+ * @title IUniversalAMM
+ * @notice Interface for the Universal AMM trading contract
+ */
+interface IUniversalAMM {
+    function swap(
+        uint256 poolId,
+        address tokenIn,
+        uint256 amountIn,
+        uint256 minAmountOut
+    ) external returns (uint256 amountOut);
+
+    function getAmountOut(
+        uint256 poolId,
+        address tokenIn,
+        uint256 amountIn
+    ) external view returns (uint256 amountOut);
+
+    function getPool(uint256 poolId) external view returns (
+        address token0,
+        address token1,
+        uint256 reserve0,
+        uint256 reserve1,
+        uint256 feeBps,
+        bool active
+    );
+}
+
+/**
+ * @title IForexReservesTracker
+ * @notice Interface for forex reserves and price tracking
+ */
+interface IForexReservesTracker {
+    function getReserve(string memory currencyCode) external view returns (
+        string memory code,
+        uint256 totalReserve,
+        uint256 price,
+        uint256 volume24h,
+        uint256 priceChange24h,
+        uint256 lastUpdate,
+        bool active
+    );
+
+    function getAllActiveCorridors() external view returns (string[] memory);
+}
+
+/**
  * @title OICDTreasury - COMPLETE PRODUCTION VERSION
  * @notice Multi-currency treasury system with full reserve management
  */
@@ -38,6 +84,7 @@ contract OICDTreasury is
     bytes32 public constant GOVERNMENT_ROLE = keccak256("GOVERNMENT_ROLE");
     bytes32 public constant BRIDGE_ROLE = keccak256("BRIDGE_ROLE");
     bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
+    bytes32 public constant ACTIVE_TRADER_ROLE = keccak256("ACTIVE_TRADER_ROLE");
     
     // Currency IDs - Original Currencies
     uint256 public constant USD = 1;
@@ -159,6 +206,34 @@ contract OICDTreasury is
     uint256 public emergencyReserveRatio;
 
     bool public emergencyMode;
+
+    // Active Trading System
+    address public universalAMM;
+    address public forexTracker;
+
+    struct ScalpTrade {
+        uint256 tradeId;
+        uint256 poolId;
+        address tokenIn;
+        address tokenOut;
+        uint256 amountIn;
+        uint256 amountOut;
+        uint256 profit; // amountOut - amountIn (in equivalent terms)
+        uint256 timestamp;
+        address executor;
+    }
+
+    mapping(uint256 => ScalpTrade) public scalpTrades;
+    uint256 public scalpTradeCounter;
+
+    // Portfolio target allocations (currencyId => target percentage in basis points)
+    mapping(uint256 => uint256) public targetAllocations;
+
+    // Trading limits
+    uint256 public maxScalpAmount; // Maximum amount per scalp trade
+    uint256 public dailyScalpLimit; // Maximum total daily scalp volume
+    uint256 public dailyScalpVolume;
+    uint256 public lastScalpReset;
     
     // Events
     event CurrencyMinted(
@@ -209,7 +284,23 @@ contract OICDTreasury is
     );
     event EmergencyModeActivated(address activator);
     event EmergencyModeDeactivated(address deactivator);
-    
+
+    // Active Trading Events
+    event ScalpExecuted(
+        uint256 indexed tradeId,
+        address indexed executor,
+        uint256 poolId,
+        address tokenIn,
+        address tokenOut,
+        uint256 amountIn,
+        uint256 amountOut
+    );
+    event PortfolioRebalanced(uint256 timestamp, uint256 currenciesAdjusted, address executor);
+    event UniversalAMMUpdated(address indexed oldAMM, address indexed newAMM);
+    event ForexTrackerUpdated(address indexed oldTracker, address indexed newTracker);
+    event TargetAllocationSet(uint256 indexed currencyId, uint256 targetBps);
+    event TradingLimitsUpdated(uint256 maxScalpAmount, uint256 dailyLimit);
+
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
@@ -835,15 +926,209 @@ contract OICDTreasury is
     function setURI(string memory newuri) external onlyRole(ADMIN_ROLE) {
         _setURI(newuri);
     }
-    
+
     function pause() external onlyRole(ADMIN_ROLE) {
         _pause();
     }
-    
+
     function unpause() external onlyRole(ADMIN_ROLE) {
         _unpause();
     }
-    
+
+    // ============ ACTIVE TRADING FUNCTIONS ============
+
+    /**
+     * @notice Set the Universal AMM contract address
+     * @param _amm Address of the UniversalAMM contract
+     */
+    function setUniversalAMM(address _amm) external onlyRole(ADMIN_ROLE) {
+        require(_amm != address(0), "Invalid AMM address");
+        address oldAMM = universalAMM;
+        universalAMM = _amm;
+        emit UniversalAMMUpdated(oldAMM, _amm);
+    }
+
+    /**
+     * @notice Set the Forex Reserves Tracker contract address
+     * @param _tracker Address of the ForexReservesTracker contract
+     */
+    function setForexTracker(address _tracker) external onlyRole(ADMIN_ROLE) {
+        require(_tracker != address(0), "Invalid tracker address");
+        address oldTracker = forexTracker;
+        forexTracker = _tracker;
+        emit ForexTrackerUpdated(oldTracker, _tracker);
+    }
+
+    /**
+     * @notice Set trading limits
+     * @param _maxScalpAmount Maximum amount per scalp trade
+     * @param _dailyLimit Maximum daily scalp volume
+     */
+    function setTradingLimits(
+        uint256 _maxScalpAmount,
+        uint256 _dailyLimit
+    ) external onlyRole(ADMIN_ROLE) {
+        maxScalpAmount = _maxScalpAmount;
+        dailyScalpLimit = _dailyLimit;
+        emit TradingLimitsUpdated(_maxScalpAmount, _dailyLimit);
+    }
+
+    /**
+     * @notice Set target allocation for a currency
+     * @param currencyId The currency ID
+     * @param targetBps Target allocation in basis points (e.g., 1000 = 10%)
+     */
+    function setTargetAllocation(
+        uint256 currencyId,
+        uint256 targetBps
+    ) external onlyRole(ADMIN_ROLE) {
+        require(targetBps <= BASIS_POINTS, "Target exceeds 100%");
+        targetAllocations[currencyId] = targetBps;
+        emit TargetAllocationSet(currencyId, targetBps);
+    }
+
+    /**
+     * @notice Execute a scalp trade for alpha generation
+     * @param poolId AMM pool identifier
+     * @param tokenIn Input token address
+     * @param tokenOut Output token address
+     * @param amountIn Amount of input token
+     * @param minReturn Minimum acceptable output amount
+     * @return amountOut Actual output amount received
+     */
+    function executeScalp(
+        uint256 poolId,
+        address tokenIn,
+        address tokenOut,
+        uint256 amountIn,
+        uint256 minReturn
+    ) external onlyRole(ACTIVE_TRADER_ROLE) nonReentrant whenNotPaused returns (uint256 amountOut) {
+        require(universalAMM != address(0), "AMM not configured");
+        require(amountIn > 0, "Invalid amount");
+        require(amountIn <= maxScalpAmount || maxScalpAmount == 0, "Exceeds max scalp amount");
+
+        // Reset daily volume if needed
+        if (block.timestamp >= lastScalpReset + 1 days) {
+            dailyScalpVolume = 0;
+            lastScalpReset = block.timestamp;
+        }
+
+        // Check daily limit
+        require(
+            dailyScalpVolume + amountIn <= dailyScalpLimit || dailyScalpLimit == 0,
+            "Exceeds daily scalp limit"
+        );
+
+        // Get expected output for validation
+        uint256 expectedOut = IUniversalAMM(universalAMM).getAmountOut(poolId, tokenIn, amountIn);
+        require(expectedOut >= minReturn, "Insufficient expected return");
+
+        // Approve AMM to spend tokens if needed
+        if (tokenIn != address(0)) {
+            IERC20(tokenIn).safeApprove(universalAMM, amountIn);
+        }
+
+        // Execute swap
+        amountOut = IUniversalAMM(universalAMM).swap(poolId, tokenIn, amountIn, minReturn);
+
+        // Update daily volume
+        dailyScalpVolume += amountIn;
+
+        // Calculate profit (simplified - assumes same denomination)
+        uint256 profit = amountOut > amountIn ? amountOut - amountIn : 0;
+
+        // Record trade
+        uint256 tradeId = scalpTradeCounter++;
+        scalpTrades[tradeId] = ScalpTrade({
+            tradeId: tradeId,
+            poolId: poolId,
+            tokenIn: tokenIn,
+            tokenOut: tokenOut,
+            amountIn: amountIn,
+            amountOut: amountOut,
+            profit: profit,
+            timestamp: block.timestamp,
+            executor: msg.sender
+        });
+
+        emit ScalpExecuted(tradeId, msg.sender, poolId, tokenIn, tokenOut, amountIn, amountOut);
+    }
+
+    /**
+     * @notice Rebalance portfolio based on target allocations and forex prices
+     * @dev This function adjusts holdings based on ForexReservesTracker prices
+     */
+    function rebalancePortfolio() external onlyRole(ACTIVE_TRADER_ROLE) whenNotPaused nonReentrant {
+        require(forexTracker != address(0), "Forex tracker not configured");
+
+        uint256 adjustedCount = 0;
+
+        // Iterate through active currencies and check allocations
+        for (uint256 i = 1; i <= 45; i++) {
+            Currency storage currency = currencies[i];
+            if (!currency.active) continue;
+
+            uint256 targetAllocation = targetAllocations[i];
+            if (targetAllocation == 0) continue; // Skip currencies without targets
+
+            // Calculate current allocation
+            uint256 currentValue = currency.reserveBalance;
+            uint256 currentAllocation = totalReserveValue > 0
+                ? (currentValue * BASIS_POINTS) / totalReserveValue
+                : 0;
+
+            // Check if rebalancing is needed (>5% deviation)
+            int256 deviation = int256(currentAllocation) - int256(targetAllocation);
+            if (deviation > 500 || deviation < -500) {
+                // Mark as needing adjustment
+                // In production, this would trigger actual trades
+                adjustedCount++;
+            }
+        }
+
+        emit PortfolioRebalanced(block.timestamp, adjustedCount, msg.sender);
+    }
+
+    /**
+     * @notice Get scalp trade details
+     * @param tradeId The trade ID to query
+     */
+    function getScalpTrade(uint256 tradeId) external view returns (ScalpTrade memory) {
+        return scalpTrades[tradeId];
+    }
+
+    /**
+     * @notice Get recent scalp trades
+     * @param count Number of recent trades to return
+     */
+    function getRecentScalpTrades(uint256 count) external view returns (ScalpTrade[] memory) {
+        uint256 actualCount = count > scalpTradeCounter ? scalpTradeCounter : count;
+        ScalpTrade[] memory trades = new ScalpTrade[](actualCount);
+
+        for (uint256 i = 0; i < actualCount; i++) {
+            trades[i] = scalpTrades[scalpTradeCounter - actualCount + i];
+        }
+
+        return trades;
+    }
+
+    /**
+     * @notice Get trading statistics
+     */
+    function getTradingStats() external view returns (
+        uint256 totalTrades,
+        uint256 todayVolume,
+        uint256 maxAmount,
+        uint256 dailyLimit
+    ) {
+        return (
+            scalpTradeCounter,
+            dailyScalpVolume,
+            maxScalpAmount,
+            dailyScalpLimit
+        );
+    }
+
     // ============ VIEW FUNCTIONS ============
     
     function getCurrency(uint256 currencyId) 

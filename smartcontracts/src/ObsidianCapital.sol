@@ -137,9 +137,7 @@ contract ObsidianCapital is
     function initialize(
         address admin,
         address _darkPoolAddress,
-        address _cexAddress,
-        uint256 _managementFee,
-        uint256 _performanceFee
+        address _cexAddress
     ) public initializer {
         __AccessControl_init();
         __Pausable_init();
@@ -151,9 +149,9 @@ contract ObsidianCapital is
 
         darkPoolAddress = _darkPoolAddress;
         cexAddress = _cexAddress;
-        managementFee = _managementFee;
-        performanceFee = _performanceFee;
-        navPerShare = 1e18; // Start at 1.0
+        managementFee = 300;
+        performanceFee = 3000;
+        navPerShare = 1e18;
     }
 
     function _authorizeUpgrade(address newImplementation)
@@ -331,7 +329,8 @@ contract ObsidianCapital is
         totalShares -= investment.shares;
         totalAUM -= withdrawalAmount;
 
-        payable(msg.sender).transfer(netAmount);
+        (bool success, ) = payable(msg.sender).call{value: netAmount}("");
+        require(success, "Transfer failed");
     }
 
     /**

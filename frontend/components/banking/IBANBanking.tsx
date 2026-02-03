@@ -1,298 +1,494 @@
 'use client';
 
-import { useState } from 'react';
-import { useAccount, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
-import { CONTRACTS } from '@/lib/contracts';
-import { parseEther } from 'viem';
+import React, { useState, useMemo } from 'react';
+import { useAccount } from 'wagmi';
+import { formatEther, parseEther } from 'viem';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import {
+  useMyIBANAccount,
+  useRegisterIBAN,
+  useDepositToIBAN,
+  useWithdrawFromIBAN,
+  useInterBankTransfer,
+  useUseCredit,
+  useRepayCredit,
+  SUPPORTED_COUNTRY_CODES,
+  formatIBANDisplay,
+  calculateAvailableCredit,
+  type CountryCode,
+} from '@/hooks/contracts/useShadowBank';
+import {
+  Building2,
+  CreditCard,
+  ArrowUpRight,
+  ArrowDownLeft,
+  RefreshCw,
+  Check,
+  AlertCircle,
+  Copy,
+  Wallet,
+  Percent,
+} from 'lucide-react';
 
-export default function IBANBanking() {
-  const { address } = useAccount();
-  const [activeTab, setActiveTab] = useState<'transfer' | 'generate'>('transfer');
+interface TabProps {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}
 
-  const [fromIBAN, setFromIBAN] = useState('');
-  const [toIBAN, setToIBAN] = useState('');
-  const [amount, setAmount] = useState('');
-  const [referenceNumber, setReferenceNumber] = useState('');
-  const [swiftCode, setSWIFTCode] = useState('');
-
-  const [countryCode, setCountryCode] = useState('US');
-
-  const { writeContract, data: hash } = useWriteContract();
-  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
-
-  const handleTransfer = async () => {
-    if (!fromIBAN || !toIBAN || !amount || !swiftCode) return;
-
-    try {
-      writeContract({
-        address: CONTRACTS.IBANBankingSystem,
-        abi: IBAN_ABI,
-        functionName: 'initiateTransfer',
-        args: [fromIBAN, toIBAN, parseEther(amount), referenceNumber, swiftCode],
-      });
-    } catch (error) {
-      console.error('Error initiating transfer:', error);
-    }
-  };
-
-  const handleGenerateIBAN = async () => {
-    if (!address || !countryCode) return;
-
-    try {
-      writeContract({
-        address: CONTRACTS.IBANBankingSystem,
-        abi: IBAN_ABI,
-        functionName: 'generateIBAN',
-        args: [countryCode, address],
-      });
-    } catch (error) {
-      console.error('Error generating IBAN:', error);
-    }
-  };
-
+function Tab({ active, onClick, children }: TabProps) {
   return (
-    <div className="space-y-6">
-      <div className="glass rounded-xl p-6">
-        <h2 className="text-2xl font-bold text-white mb-2">IBAN Banking System</h2>
-        <p className="text-gray-400 mb-6">International Bank Account Number transfers via SWIFT network</p>
+    <button
+      onClick={onClick}
+      className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${
+        active
+          ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+          : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="p-4 bg-gradient-to-br from-blue-500/20 to-cyan-500/20 border border-blue-500/30 rounded-lg">
-            <p className="text-sm text-gray-400 mb-1">Total Transfers</p>
-            <p className="text-3xl font-bold text-white">12,847</p>
-            <p className="text-xs text-blue-400 mt-1">All time</p>
-          </div>
-          <div className="p-4 bg-gradient-to-br from-green-500/20 to-emerald-500/20 border border-green-500/30 rounded-lg">
-            <p className="text-sm text-gray-400 mb-1">Volume (24h)</p>
-            <p className="text-3xl font-bold text-white">$4.2M</p>
-            <p className="text-xs text-green-400 mt-1">+12.5% from yesterday</p>
-          </div>
-          <div className="p-4 bg-gradient-to-br from-purple-500/20 to-violet-500/20 border border-purple-500/30 rounded-lg">
-            <p className="text-sm text-gray-400 mb-1">Active Accounts</p>
-            <p className="text-3xl font-bold text-white">8,429</p>
-            <p className="text-xs text-purple-400 mt-1">Globally verified</p>
-          </div>
-        </div>
-      </div>
+export function IBANBanking() {
+  const { address, isConnected } = useAccount();
+  const { ibanHash, account, hasIBAN, isLoading } = useMyIBANAccount();
 
-      <div className="glass rounded-xl p-6">
-        <div className="flex gap-2 mb-6">
-          {(['transfer', 'generate'] as const).map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`px-6 py-3 rounded-lg font-semibold transition-all ${
-                activeTab === tab
-                  ? 'bg-primary-500 text-white'
-                  : 'bg-white/5 text-gray-400 hover:bg-white/10'
-              }`}
+  // Tab state
+  const [activeTab, setActiveTab] = useState<'overview' | 'transfer' | 'credit'>('overview');
+
+  // Registration form state
+  const [selectedCountry, setSelectedCountry] = useState<CountryCode>('GB');
+  const [bankCode, setBankCode] = useState('SHDW');
+
+  // Transfer form state
+  const [recipientIBAN, setRecipientIBAN] = useState('');
+  const [transferAmount, setTransferAmount] = useState('');
+
+  // Deposit/Withdraw state
+  const [depositAmount, setDepositAmount] = useState('');
+  const [withdrawAmount, setWithdrawAmount] = useState('');
+
+  // Credit state
+  const [creditAmount, setCreditAmount] = useState('');
+  const [repayAmount, setRepayAmount] = useState('');
+
+  // Hooks
+  const { registerIBAN, isPending: isRegistering, isSuccess: registerSuccess } = useRegisterIBAN();
+  const { deposit, isPending: isDepositing, isSuccess: depositSuccess } = useDepositToIBAN();
+  const { withdraw, isPending: isWithdrawing, isSuccess: withdrawSuccess } = useWithdrawFromIBAN();
+  const { transfer, calculateFee, calculateNet, isPending: isTransferring, isSuccess: transferSuccess } = useInterBankTransfer();
+  const { useCredit, isPending: isUsingCredit, isSuccess: useCreditSuccess } = useUseCredit();
+  const { repayCredit, isPending: isRepaying, isSuccess: repaySuccess } = useRepayCredit();
+
+  // Computed values
+  const formattedIBAN = useMemo(() => {
+    if (!ibanHash || !account) return null;
+    return formatIBANDisplay(ibanHash, account.countryCode, account.bankCode);
+  }, [ibanHash, account]);
+
+  const availableCredit = useMemo(() => {
+    return calculateAvailableCredit(account);
+  }, [account]);
+
+  const transferFee = useMemo(() => {
+    if (!transferAmount) return '0';
+    return calculateFee(transferAmount);
+  }, [transferAmount, calculateFee]);
+
+  const transferNet = useMemo(() => {
+    if (!transferAmount) return '0';
+    return calculateNet(transferAmount);
+  }, [transferAmount, calculateNet]);
+
+  // Copy IBAN to clipboard
+  const copyIBAN = () => {
+    if (formattedIBAN) {
+      navigator.clipboard.writeText(formattedIBAN);
+    }
+  };
+
+  if (!isConnected) {
+    return (
+      <Card className="bg-slate-800/50 border-slate-700">
+        <CardContent className="flex flex-col items-center justify-center py-12">
+          <Wallet className="w-12 h-12 text-slate-500 mb-4" />
+          <p className="text-slate-400">Connect your wallet to access IBAN Banking</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <Card className="bg-slate-800/50 border-slate-700">
+        <CardContent className="flex items-center justify-center py-12">
+          <RefreshCw className="w-8 h-8 text-blue-400 animate-spin" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // Registration view if no IBAN
+  if (!hasIBAN) {
+    return (
+      <Card className="bg-slate-800/50 border-slate-700">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Building2 className="w-5 h-5 text-blue-400" />
+            Register IBAN Account
+          </CardTitle>
+          <CardDescription>
+            Create your Shadow Banking IBAN for international transfers
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div>
+            <label className="text-sm text-slate-400 mb-2 block">Country</label>
+            <select
+              value={selectedCountry}
+              onChange={(e) => setSelectedCountry(e.target.value as CountryCode)}
+              className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-white focus:border-blue-500 focus:outline-none"
             >
-              {tab === 'transfer' ? 'Bank Transfer' : 'Generate IBAN'}
-            </button>
-          ))}
-        </div>
-
-        {activeTab === 'transfer' ? (
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-400 mb-2">From IBAN</label>
-              <input
-                type="text"
-                value={fromIBAN}
-                onChange={(e) => setFromIBAN(e.target.value)}
-                placeholder="GB82 WEST 1234 5698 7654 32"
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-primary-500 font-mono"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-400 mb-2">To IBAN</label>
-              <input
-                type="text"
-                value={toIBAN}
-                onChange={(e) => setToIBAN(e.target.value)}
-                placeholder="DE89 3704 0044 0532 0130 00"
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-primary-500 font-mono"
-              />
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-400 mb-2">Amount</label>
-                <input
-                  type="number"
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  placeholder="0.00"
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-primary-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-400 mb-2">SWIFT Code</label>
-                <input
-                  type="text"
-                  value={swiftCode}
-                  onChange={(e) => setSWIFTCode(e.target.value)}
-                  placeholder="DEUTDEFF"
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-primary-500 font-mono"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-400 mb-2">Reference Number (Optional)</label>
-              <input
-                type="text"
-                value={referenceNumber}
-                onChange={(e) => setReferenceNumber(e.target.value)}
-                placeholder="Invoice #12345"
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-primary-500"
-              />
-            </div>
-
-            <div className="p-4 bg-blue-500/10 border border-blue-500/20 rounded-lg">
-              <div className="flex items-start gap-3">
-                <svg className="w-5 h-5 text-blue-400 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-white mb-1">SWIFT Transfer Information</p>
-                  <ul className="space-y-1 text-xs text-gray-400">
-                    <li>• Standard processing time: 1-3 business days</li>
-                    <li>• Real-time validation of IBAN format</li>
-                    <li>• Secure SWIFT messaging protocol</li>
-                    <li>• Compliance with international banking regulations</li>
-                  </ul>
-                </div>
-              </div>
-            </div>
-
-            <button
-              onClick={handleTransfer}
-              disabled={isConfirming || !address}
-              className="w-full py-4 bg-primary-500 hover:bg-primary-600 text-white font-bold rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isConfirming ? 'Processing Transfer...' : 'Initiate Transfer'}
-            </button>
+              {SUPPORTED_COUNTRY_CODES.map((code) => (
+                <option key={code} value={code}>
+                  {code} - {code === 'OZ' ? 'OZF Federation' : code}
+                </option>
+              ))}
+            </select>
           </div>
-        ) : (
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-400 mb-2">Country Code</label>
-              <select
-                value={countryCode}
-                onChange={(e) => setCountryCode(e.target.value)}
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-primary-500"
-              >
-                <option value="US">United States (US)</option>
-                <option value="GB">United Kingdom (GB)</option>
-                <option value="DE">Germany (DE)</option>
-                <option value="FR">France (FR)</option>
-                <option value="JP">Japan (JP)</option>
-                <option value="CN">China (CN)</option>
-                <option value="AU">Australia (AU)</option>
-                <option value="CA">Canada (CA)</option>
-                <option value="RU">Russia (RU)</option>
-                <option value="ID">Indonesia (ID)</option>
-                <option value="SG">Singapore (SG)</option>
-                <option value="SA">Saudi Arabia (SA)</option>
-                <option value="AE">UAE (AE)</option>
-                <option value="BR">Brazil (BR)</option>
-                <option value="IN">India (IN)</option>
-                <option value="MX">Mexico (MX)</option>
-              </select>
-            </div>
 
-            <div className="p-4 bg-white/5 rounded-lg">
-              <p className="text-sm text-gray-400 mb-2">Your Wallet Address</p>
-              <p className="text-sm text-white font-mono break-all">{address || 'Not connected'}</p>
-            </div>
-
-            <div className="p-4 bg-purple-500/10 border border-purple-500/20 rounded-lg">
-              <p className="text-sm font-medium text-white mb-2">IBAN Generation</p>
-              <ul className="space-y-1 text-xs text-gray-400">
-                <li>• Algorithmically generated unique IBAN</li>
-                <li>• Linked to your blockchain wallet address</li>
-                <li>• Compatible with SWIFT network</li>
-                <li>• Instantly verifiable globally</li>
-              </ul>
-            </div>
-
-            <button
-              onClick={handleGenerateIBAN}
-              disabled={isConfirming || !address}
-              className="w-full py-4 bg-purple-500 hover:bg-purple-600 text-white font-bold rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isConfirming ? 'Generating IBAN...' : 'Generate IBAN'}
-            </button>
+          <div>
+            <label className="text-sm text-slate-400 mb-2 block">Bank Code (4 characters)</label>
+            <Input
+              value={bankCode}
+              onChange={(e) => setBankCode(e.target.value.toUpperCase().slice(0, 4))}
+              placeholder="SHDW"
+              className="bg-slate-900 border-slate-700"
+              maxLength={4}
+            />
           </div>
-        )}
 
-        {isSuccess && (
-          <div className="mt-4 p-4 bg-green-500/10 border border-green-500/20 rounded-lg">
-            <p className="text-sm text-green-400">
-              {activeTab === 'transfer' ? 'Transfer initiated successfully!' : 'IBAN generated successfully!'}
+          <div className="bg-slate-900/50 rounded-lg p-4 border border-slate-700">
+            <p className="text-sm text-slate-400">Preview IBAN Format:</p>
+            <p className="text-lg font-mono text-white mt-1">
+              {selectedCountry}82 {bankCode.padEnd(4, '0')} XXXX
             </p>
           </div>
-        )}
+
+          <Button
+            onClick={() => registerIBAN(selectedCountry, bankCode)}
+            disabled={isRegistering || bankCode.length < 4}
+            className="w-full bg-blue-600 hover:bg-blue-700"
+          >
+            {isRegistering ? (
+              <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <CreditCard className="w-4 h-4 mr-2" />
+            )}
+            Register IBAN
+          </Button>
+
+          {registerSuccess && (
+            <div className="flex items-center gap-2 text-green-400 text-sm">
+              <Check className="w-4 h-4" />
+              IBAN registered successfully!
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // Main dashboard view
+  return (
+    <div className="space-y-4">
+      {/* Account Overview Card */}
+      <Card className="bg-slate-800/50 border-slate-700">
+        <CardHeader className="pb-2">
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <CreditCard className="w-5 h-5 text-blue-400" />
+                Your IBAN Account
+              </CardTitle>
+              <CardDescription>Shadow Banking International Account</CardDescription>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs px-2 py-1 bg-green-500/20 text-green-400 rounded-full">
+                Active
+              </span>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {/* IBAN Display */}
+          <div className="bg-slate-900/50 rounded-lg p-4 border border-slate-700 mb-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs text-slate-400 mb-1">IBAN</p>
+                <p className="text-xl font-mono text-white">{formattedIBAN}</p>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={copyIBAN}
+                className="text-slate-400 hover:text-white"
+              >
+                <Copy className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+
+          {/* Balance Grid */}
+          <div className="grid grid-cols-3 gap-4">
+            <div className="bg-slate-900/50 rounded-lg p-3 border border-slate-700">
+              <p className="text-xs text-slate-400">Balance</p>
+              <p className="text-lg font-semibold text-white">
+                {account ? formatEther(account.balance) : '0'} ETH
+              </p>
+            </div>
+            <div className="bg-slate-900/50 rounded-lg p-3 border border-slate-700">
+              <p className="text-xs text-slate-400">Credit Line</p>
+              <p className="text-lg font-semibold text-green-400">
+                {account ? formatEther(account.creditLine) : '0'} ETH
+              </p>
+            </div>
+            <div className="bg-slate-900/50 rounded-lg p-3 border border-slate-700">
+              <p className="text-xs text-slate-400">Available Credit</p>
+              <p className="text-lg font-semibold text-blue-400">
+                {formatEther(availableCredit)} ETH
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Tab Navigation */}
+      <div className="flex gap-2">
+        <Tab active={activeTab === 'overview'} onClick={() => setActiveTab('overview')}>
+          Deposit/Withdraw
+        </Tab>
+        <Tab active={activeTab === 'transfer'} onClick={() => setActiveTab('transfer')}>
+          Transfer
+        </Tab>
+        <Tab active={activeTab === 'credit'} onClick={() => setActiveTab('credit')}>
+          Credit
+        </Tab>
       </div>
 
-      <div className="glass rounded-xl p-6">
-        <h3 className="text-xl font-bold text-white mb-4">Recent Transfers</h3>
-        <div className="space-y-3">
-          {[1, 2, 3, 4, 5].map((i) => (
-            <div key={i} className="p-4 bg-white/5 hover:bg-white/10 rounded-lg transition-all cursor-pointer">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-500 rounded-lg flex items-center justify-center">
-                    <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
-                    </svg>
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold text-white">Transfer #{12847 - i}</p>
-                    <p className="text-xs text-gray-400 font-mono">GB82...7654 → DE89...0130</p>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <p className="text-sm font-bold text-white">${(Math.random() * 100000).toFixed(2)}</p>
-                  <p className="text-xs text-green-400">Completed</p>
-                </div>
-              </div>
-              <div className="flex items-center justify-between text-xs text-gray-400">
-                <span>SWIFT: DEUTDEFF</span>
-                <span>{new Date(Date.now() - i * 86400000).toLocaleDateString()}</span>
-              </div>
-            </div>
-          ))}
+      {/* Tab Content */}
+      {activeTab === 'overview' && (
+        <div className="grid grid-cols-2 gap-4">
+          {/* Deposit */}
+          <Card className="bg-slate-800/50 border-slate-700">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <ArrowDownLeft className="w-4 h-4 text-green-400" />
+                Deposit
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <Input
+                type="number"
+                value={depositAmount}
+                onChange={(e) => setDepositAmount(e.target.value)}
+                placeholder="Amount in ETH"
+                className="bg-slate-900 border-slate-700"
+              />
+              <Button
+                onClick={() => deposit(depositAmount)}
+                disabled={isDepositing || !depositAmount}
+                className="w-full bg-green-600 hover:bg-green-700"
+              >
+                {isDepositing ? <RefreshCw className="w-4 h-4 animate-spin" /> : 'Deposit'}
+              </Button>
+              {depositSuccess && (
+                <p className="text-green-400 text-sm flex items-center gap-1">
+                  <Check className="w-4 h-4" /> Deposited!
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Withdraw */}
+          <Card className="bg-slate-800/50 border-slate-700">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <ArrowUpRight className="w-4 h-4 text-orange-400" />
+                Withdraw
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <Input
+                type="number"
+                value={withdrawAmount}
+                onChange={(e) => setWithdrawAmount(e.target.value)}
+                placeholder="Amount in ETH"
+                className="bg-slate-900 border-slate-700"
+              />
+              <Button
+                onClick={() => withdraw(withdrawAmount)}
+                disabled={isWithdrawing || !withdrawAmount}
+                className="w-full bg-orange-600 hover:bg-orange-700"
+              >
+                {isWithdrawing ? <RefreshCw className="w-4 h-4 animate-spin" /> : 'Withdraw'}
+              </Button>
+              {withdrawSuccess && (
+                <p className="text-green-400 text-sm flex items-center gap-1">
+                  <Check className="w-4 h-4" /> Withdrawn!
+                </p>
+              )}
+            </CardContent>
+          </Card>
         </div>
-      </div>
+      )}
+
+      {activeTab === 'transfer' && (
+        <Card className="bg-slate-800/50 border-slate-700">
+          <CardHeader>
+            <CardTitle className="text-sm flex items-center gap-2">
+              <ArrowUpRight className="w-4 h-4 text-blue-400" />
+              Inter-Bank Transfer
+            </CardTitle>
+            <CardDescription>
+              Transfer to another IBAN account (0.009% fee)
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div>
+              <label className="text-sm text-slate-400 mb-2 block">Recipient IBAN Hash</label>
+              <Input
+                value={recipientIBAN}
+                onChange={(e) => setRecipientIBAN(e.target.value)}
+                placeholder="0x..."
+                className="bg-slate-900 border-slate-700 font-mono"
+              />
+            </div>
+
+            <div>
+              <label className="text-sm text-slate-400 mb-2 block">Amount</label>
+              <Input
+                type="number"
+                value={transferAmount}
+                onChange={(e) => setTransferAmount(e.target.value)}
+                placeholder="Amount in ETH"
+                className="bg-slate-900 border-slate-700"
+              />
+            </div>
+
+            {transferAmount && (
+              <div className="bg-slate-900/50 rounded-lg p-3 border border-slate-700 space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-slate-400">Transfer Fee (0.009%)</span>
+                  <span className="text-orange-400">{transferFee} ETH</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-slate-400">Recipient Receives</span>
+                  <span className="text-green-400">{transferNet} ETH</span>
+                </div>
+              </div>
+            )}
+
+            <Button
+              onClick={() => transfer(recipientIBAN as `0x${string}`, transferAmount)}
+              disabled={isTransferring || !recipientIBAN || !transferAmount}
+              className="w-full bg-blue-600 hover:bg-blue-700"
+            >
+              {isTransferring ? (
+                <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <ArrowUpRight className="w-4 h-4 mr-2" />
+              )}
+              Send Transfer
+            </Button>
+
+            {transferSuccess && (
+              <div className="flex items-center gap-2 text-green-400 text-sm">
+                <Check className="w-4 h-4" />
+                Transfer completed successfully!
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {activeTab === 'credit' && (
+        <div className="grid grid-cols-2 gap-4">
+          {/* Use Credit */}
+          <Card className="bg-slate-800/50 border-slate-700">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Percent className="w-4 h-4 text-purple-400" />
+                Use Credit
+              </CardTitle>
+              <CardDescription>
+                Available: {formatEther(availableCredit)} ETH
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <Input
+                type="number"
+                value={creditAmount}
+                onChange={(e) => setCreditAmount(e.target.value)}
+                placeholder="Amount in ETH"
+                className="bg-slate-900 border-slate-700"
+              />
+              <Button
+                onClick={() => useCredit(creditAmount)}
+                disabled={isUsingCredit || !creditAmount || parseEther(creditAmount || '0') > availableCredit}
+                className="w-full bg-purple-600 hover:bg-purple-700"
+              >
+                {isUsingCredit ? <RefreshCw className="w-4 h-4 animate-spin" /> : 'Use Credit'}
+              </Button>
+              {useCreditSuccess && (
+                <p className="text-green-400 text-sm flex items-center gap-1">
+                  <Check className="w-4 h-4" /> Credit disbursed!
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Repay Credit */}
+          <Card className="bg-slate-800/50 border-slate-700">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <ArrowDownLeft className="w-4 h-4 text-green-400" />
+                Repay Credit
+              </CardTitle>
+              <CardDescription>
+                Outstanding: {account ? formatEther(account.creditUsed) : '0'} ETH
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <Input
+                type="number"
+                value={repayAmount}
+                onChange={(e) => setRepayAmount(e.target.value)}
+                placeholder="Amount in ETH"
+                className="bg-slate-900 border-slate-700"
+              />
+              <Button
+                onClick={() => repayCredit(repayAmount)}
+                disabled={isRepaying || !repayAmount}
+                className="w-full bg-green-600 hover:bg-green-700"
+              >
+                {isRepaying ? <RefreshCw className="w-4 h-4 animate-spin" /> : 'Repay'}
+              </Button>
+              {repaySuccess && (
+                <p className="text-green-400 text-sm flex items-center gap-1">
+                  <Check className="w-4 h-4" /> Repaid!
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }
 
-const IBAN_ABI = [
-  {
-    inputs: [
-      { name: 'fromIBAN', type: 'string' },
-      { name: 'toIBAN', type: 'string' },
-      { name: 'amount', type: 'uint256' },
-      { name: 'referenceNumber', type: 'string' },
-      { name: 'swiftCode', type: 'string' },
-    ],
-    name: 'initiateTransfer',
-    outputs: [{ name: '', type: 'uint256' }],
-    stateMutability: 'nonpayable',
-    type: 'function',
-  },
-  {
-    inputs: [
-      { name: 'countryCode', type: 'string' },
-      { name: 'owner', type: 'address' },
-    ],
-    name: 'generateIBAN',
-    outputs: [{ name: '', type: 'string' }],
-    stateMutability: 'nonpayable',
-    type: 'function',
-  },
-] as const;
+export default IBANBanking;

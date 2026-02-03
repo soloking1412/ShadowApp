@@ -63,6 +63,33 @@ contract FractionalReserveBanking is
         uint256 lastUpdate;
     }
 
+    // IBAN Banking System
+    struct IBANAccount {
+        bytes2 countryCode;
+        bytes4 bankCode;
+        address owner;
+        uint256 balance;
+        uint256 creditLine;
+        uint256 creditUsed;
+        uint256 lastActivity;
+        bool active;
+    }
+
+    // IBAN Mappings
+    mapping(bytes32 => IBANAccount) public ibanAccounts;
+    mapping(address => bytes32) public addressToIBAN;
+    mapping(bytes2 => bool) public supportedCountryCodes;
+
+    // Treasury for fee collection
+    address public treasuryAddress;
+
+    // IBAN Transfer fee: 0.009% = 9 basis points out of 100,000
+    uint256 public constant TRANSFER_FEE_BPS = 9;
+    uint256 public constant FEE_DENOMINATOR = 100000;
+
+    // Credit limits based on Global Debt Index
+    uint256 public globalDebtIndex; // Maximum credit multiplier (e.g., 200 = 2x balance)
+
     mapping(string => CountryReserve) public countryReserves;
     mapping(uint256 => Deposit) public deposits;
     mapping(uint256 => Loan) public loans;
@@ -86,6 +113,14 @@ contract FractionalReserveBanking is
     event LoanRepaid(uint256 indexed loanId, uint256 amount);
     event WithdrawalMade(uint256 indexed depositId, address indexed depositor, uint256 amount);
 
+    // IBAN Events
+    event IBANRegistered(bytes32 indexed ibanHash, address indexed owner, bytes2 countryCode, bytes4 bankCode);
+    event IBANDeposit(bytes32 indexed ibanHash, address indexed depositor, uint256 amount);
+    event InterBankTransfer(bytes32 indexed fromIBAN, bytes32 indexed toIBAN, uint256 amount, uint256 fee);
+    event CreditIssued(bytes32 indexed ibanHash, uint256 amount, uint256 newCreditLine);
+    event CreditRepaid(bytes32 indexed ibanHash, uint256 amount, uint256 remainingDebt);
+    event TreasuryUpdated(address indexed oldTreasury, address indexed newTreasury);
+
     constructor() {
         _disableInitializers();
     }
@@ -100,8 +135,39 @@ contract FractionalReserveBanking is
         _grantRole(UPGRADER_ROLE, admin);
 
         globalReserveRatio = _globalReserveRatio;
+        globalDebtIndex = 200; // Default 2x credit multiplier
 
         _initializeCountries();
+        _initializeSupportedCountryCodes();
+    }
+
+    /**
+     * @notice Initialize supported country codes for IBAN
+     */
+    function _initializeSupportedCountryCodes() internal {
+        // Major country codes
+        supportedCountryCodes[bytes2("US")] = true;
+        supportedCountryCodes[bytes2("GB")] = true;
+        supportedCountryCodes[bytes2("DE")] = true;
+        supportedCountryCodes[bytes2("FR")] = true;
+        supportedCountryCodes[bytes2("JP")] = true;
+        supportedCountryCodes[bytes2("CN")] = true;
+        supportedCountryCodes[bytes2("AU")] = true;
+        supportedCountryCodes[bytes2("CA")] = true;
+        supportedCountryCodes[bytes2("CH")] = true;
+        supportedCountryCodes[bytes2("SG")] = true;
+        supportedCountryCodes[bytes2("AE")] = true;
+        supportedCountryCodes[bytes2("SA")] = true;
+        supportedCountryCodes[bytes2("RU")] = true;
+        supportedCountryCodes[bytes2("IN")] = true;
+        supportedCountryCodes[bytes2("BR")] = true;
+        supportedCountryCodes[bytes2("MX")] = true;
+        supportedCountryCodes[bytes2("ZA")] = true;
+        supportedCountryCodes[bytes2("NG")] = true;
+        supportedCountryCodes[bytes2("EG")] = true;
+        supportedCountryCodes[bytes2("KR")] = true;
+        // OZF (Ozhumanill Zayed Federation) - custom code
+        supportedCountryCodes[bytes2("OZ")] = true;
     }
 
     function _initializeCountries() internal {
@@ -227,7 +293,8 @@ contract FractionalReserveBanking is
 
         userLoans[msg.sender].push(loanId);
 
-        payable(msg.sender).transfer(amount);
+        (bool success, ) = payable(msg.sender).call{value: amount}("");
+        require(success, "Transfer failed");
 
         emit LoanIssued(loanId, msg.sender, country, amount);
 
@@ -290,10 +357,280 @@ contract FractionalReserveBanking is
         holdings[deposit.country].totalHoldings -= deposit.amount;
         holdings[deposit.country].lastUpdate = block.timestamp;
 
-        payable(msg.sender).transfer(totalAmount);
+        (bool success, ) = payable(msg.sender).call{value: totalAmount}("");
+        require(success, "Transfer failed");
 
         emit WithdrawalMade(depositId, msg.sender, totalAmount);
     }
+
+    // ============ IBAN BANKING SYSTEM ============
+
+    /**
+     * @notice Set the treasury address for fee collection
+     * @param _treasury Address of the treasury contract
+     */
+    function setTreasury(address _treasury) external onlyRole(ADMIN_ROLE) {
+        require(_treasury != address(0), "Invalid treasury address");
+        address oldTreasury = treasuryAddress;
+        treasuryAddress = _treasury;
+        emit TreasuryUpdated(oldTreasury, _treasury);
+    }
+
+    /**
+     * @notice Add or remove supported country code
+     * @param countryCode Two-letter country code
+     * @param supported Whether the country is supported
+     */
+    function setSupportedCountryCode(bytes2 countryCode, bool supported) external onlyRole(ADMIN_ROLE) {
+        supportedCountryCodes[countryCode] = supported;
+    }
+
+    /**
+     * @notice Register a new IBAN for the caller
+     * @param countryCode Two-letter country code (e.g., "GB", "US")
+     * @param bankCode Four-character bank identifier
+     * @return ibanHash The generated IBAN hash identifier
+     */
+    function registerIBAN(
+        bytes2 countryCode,
+        bytes4 bankCode
+    ) external whenNotPaused returns (bytes32 ibanHash) {
+        require(supportedCountryCodes[countryCode], "Country code not supported");
+        require(addressToIBAN[msg.sender] == bytes32(0), "Already has IBAN");
+        require(bankCode != bytes4(0), "Invalid bank code");
+
+        // Generate IBAN hash: keccak256(countryCode + bankCode + address)
+        ibanHash = keccak256(abi.encodePacked(countryCode, bankCode, msg.sender));
+
+        require(!ibanAccounts[ibanHash].active, "IBAN already exists");
+
+        ibanAccounts[ibanHash] = IBANAccount({
+            countryCode: countryCode,
+            bankCode: bankCode,
+            owner: msg.sender,
+            balance: 0,
+            creditLine: 0,
+            creditUsed: 0,
+            lastActivity: block.timestamp,
+            active: true
+        });
+
+        addressToIBAN[msg.sender] = ibanHash;
+
+        emit IBANRegistered(ibanHash, msg.sender, countryCode, bankCode);
+    }
+
+    /**
+     * @notice Deposit funds to caller's IBAN account
+     */
+    function depositToIBAN() external payable nonReentrant whenNotPaused {
+        bytes32 ibanHash = addressToIBAN[msg.sender];
+        require(ibanHash != bytes32(0), "No IBAN registered");
+        require(msg.value > 0, "Invalid deposit amount");
+
+        IBANAccount storage account = ibanAccounts[ibanHash];
+        require(account.active, "IBAN inactive");
+
+        account.balance += msg.value;
+        account.lastActivity = block.timestamp;
+
+        emit IBANDeposit(ibanHash, msg.sender, msg.value);
+    }
+
+    /**
+     * @notice Withdraw funds from caller's IBAN account
+     * @param amount Amount to withdraw
+     */
+    function withdrawFromIBAN(uint256 amount) external nonReentrant whenNotPaused {
+        bytes32 ibanHash = addressToIBAN[msg.sender];
+        require(ibanHash != bytes32(0), "No IBAN registered");
+
+        IBANAccount storage account = ibanAccounts[ibanHash];
+        require(account.active, "IBAN inactive");
+        require(account.balance >= amount, "Insufficient balance");
+
+        account.balance -= amount;
+        account.lastActivity = block.timestamp;
+
+        (bool success, ) = payable(msg.sender).call{value: amount}("");
+        require(success, "Withdrawal failed");
+    }
+
+    /**
+     * @notice Transfer funds between IBAN accounts with 0.009% fee
+     * @param toIBAN Recipient's IBAN hash
+     * @param amount Amount to transfer (gross, before fee)
+     */
+    function interBankTransfer(
+        bytes32 toIBAN,
+        uint256 amount
+    ) external nonReentrant whenNotPaused {
+        bytes32 fromIBAN = addressToIBAN[msg.sender];
+        require(fromIBAN != bytes32(0), "Sender has no IBAN");
+        require(toIBAN != bytes32(0), "Invalid recipient IBAN");
+        require(fromIBAN != toIBAN, "Cannot transfer to self");
+
+        IBANAccount storage sender = ibanAccounts[fromIBAN];
+        IBANAccount storage recipient = ibanAccounts[toIBAN];
+
+        require(sender.active, "Sender IBAN inactive");
+        require(recipient.active, "Recipient IBAN inactive");
+        require(sender.balance >= amount, "Insufficient balance");
+        require(amount > 0, "Invalid amount");
+
+        // Calculate 0.009% fee (9 / 100000)
+        uint256 fee = (amount * TRANSFER_FEE_BPS) / FEE_DENOMINATOR;
+        uint256 netAmount = amount - fee;
+
+        // Update balances
+        sender.balance -= amount;
+        recipient.balance += netAmount;
+
+        sender.lastActivity = block.timestamp;
+        recipient.lastActivity = block.timestamp;
+
+        // Send fee to Treasury
+        if (fee > 0 && treasuryAddress != address(0)) {
+            (bool feeSuccess, ) = payable(treasuryAddress).call{value: fee}("");
+            require(feeSuccess, "Fee transfer failed");
+        }
+
+        emit InterBankTransfer(fromIBAN, toIBAN, amount, fee);
+    }
+
+    /**
+     * @notice Issue credit line to an IBAN account (under-collateralized)
+     * @param ibanHash The IBAN to issue credit to
+     * @param amount Credit amount to issue
+     */
+    function issueCredit(
+        bytes32 ibanHash,
+        uint256 amount
+    ) external onlyRole(OPERATOR_ROLE) {
+        IBANAccount storage account = ibanAccounts[ibanHash];
+        require(account.active, "IBAN inactive");
+        require(amount > 0, "Invalid credit amount");
+
+        // Check Global Debt Index limit: max credit = balance * (GDI / 100)
+        uint256 maxCredit = (account.balance * globalDebtIndex) / 100;
+        require(
+            account.creditLine + amount <= maxCredit,
+            "Exceeds GDI credit limit"
+        );
+
+        account.creditLine += amount;
+
+        emit CreditIssued(ibanHash, amount, account.creditLine);
+    }
+
+    /**
+     * @notice Use credit from IBAN account
+     * @param amount Amount of credit to use
+     */
+    function useCredit(uint256 amount) external nonReentrant whenNotPaused {
+        bytes32 ibanHash = addressToIBAN[msg.sender];
+        require(ibanHash != bytes32(0), "No IBAN registered");
+
+        IBANAccount storage account = ibanAccounts[ibanHash];
+        require(account.active, "IBAN inactive");
+
+        uint256 availableCredit = account.creditLine - account.creditUsed;
+        require(amount <= availableCredit, "Insufficient credit");
+
+        account.creditUsed += amount;
+        account.lastActivity = block.timestamp;
+
+        (bool success, ) = payable(msg.sender).call{value: amount}("");
+        require(success, "Credit disbursement failed");
+    }
+
+    /**
+     * @notice Repay used credit
+     */
+    function repayCredit() external payable nonReentrant {
+        bytes32 ibanHash = addressToIBAN[msg.sender];
+        require(ibanHash != bytes32(0), "No IBAN registered");
+
+        IBANAccount storage account = ibanAccounts[ibanHash];
+        require(account.creditUsed > 0, "No credit to repay");
+        require(msg.value > 0, "Invalid repayment amount");
+
+        uint256 repayAmount = msg.value > account.creditUsed ? account.creditUsed : msg.value;
+        account.creditUsed -= repayAmount;
+        account.lastActivity = block.timestamp;
+
+        // Refund excess payment
+        if (msg.value > repayAmount) {
+            (bool success, ) = payable(msg.sender).call{value: msg.value - repayAmount}("");
+            require(success, "Refund failed");
+        }
+
+        emit CreditRepaid(ibanHash, repayAmount, account.creditUsed);
+    }
+
+    /**
+     * @notice Update the Global Debt Index
+     * @param newGDI New GDI value (e.g., 200 = 2x multiplier)
+     */
+    function setGlobalDebtIndex(uint256 newGDI) external onlyRole(ADMIN_ROLE) {
+        require(newGDI >= 100 && newGDI <= 500, "GDI must be between 100-500");
+        globalDebtIndex = newGDI;
+    }
+
+    /**
+     * @notice Get IBAN account details by hash
+     * @param ibanHash The IBAN hash to query
+     */
+    function getIBANAccount(bytes32 ibanHash) external view returns (IBANAccount memory) {
+        return ibanAccounts[ibanHash];
+    }
+
+    /**
+     * @notice Get caller's IBAN hash
+     */
+    function getMyIBAN() external view returns (bytes32) {
+        return addressToIBAN[msg.sender];
+    }
+
+    /**
+     * @notice Format IBAN for display (view helper)
+     * @param ibanHash The IBAN hash
+     * @return A formatted string representation
+     */
+    function formatIBAN(bytes32 ibanHash) external view returns (string memory) {
+        IBANAccount storage account = ibanAccounts[ibanHash];
+        require(account.active, "IBAN not found");
+
+        // Return format: "XX82 YYYY ZZZZ" where XX=country, YYYY=bank, ZZZZ=hash prefix
+        bytes memory result = new bytes(14);
+        result[0] = account.countryCode[0];
+        result[1] = account.countryCode[1];
+        result[2] = "8";
+        result[3] = "2";
+        result[4] = " ";
+        result[5] = account.bankCode[0];
+        result[6] = account.bankCode[1];
+        result[7] = account.bankCode[2];
+        result[8] = account.bankCode[3];
+        result[9] = " ";
+        // Add first 4 chars of hash (hex)
+        bytes32 hash = ibanHash;
+        result[10] = _toHexChar(uint8(hash[0]) >> 4);
+        result[11] = _toHexChar(uint8(hash[0]) & 0x0f);
+        result[12] = _toHexChar(uint8(hash[1]) >> 4);
+        result[13] = _toHexChar(uint8(hash[1]) & 0x0f);
+
+        return string(result);
+    }
+
+    function _toHexChar(uint8 value) internal pure returns (bytes1) {
+        if (value < 10) {
+            return bytes1(uint8(bytes1("0")) + value);
+        }
+        return bytes1(uint8(bytes1("A")) + value - 10);
+    }
+
+    // ============ RESERVE MANAGEMENT ============
 
     function updateReserveRatio(string memory country, uint256 newRatio) external onlyRole(OPERATOR_ROLE) {
         require(newRatio >= MIN_RESERVE_RATIO, "Below minimum");

@@ -48,6 +48,8 @@ contract TwoDIBondTracker is
         uint256 couponFrequency;
     }
 
+    enum PaymentCurrency { ETH, OICD }
+
     struct TwoDIBond {
         uint256 bondId;
         BondType bondType;
@@ -61,10 +63,13 @@ contract TwoDIBondTracker is
         uint256 maturityDate;
         uint256 lastCouponDate;
         BondStatus status;
+        PaymentCurrency paymentCurrency;
     }
 
     mapping(uint256 => TwoDIBond) public bonds;
     mapping(uint256 => mapping(address => uint256)) public bondHoldings;
+    mapping(uint256 => address[]) private bondHolders;
+    mapping(uint256 => mapping(address => uint256)) private holderIndex;
 
     uint256 public bondCounter;
     uint256 public constant BASIS_POINTS = 10000;
@@ -113,11 +118,12 @@ contract TwoDIBondTracker is
             issuanceDate: block.timestamp,
             maturityDate: params.maturityDate,
             lastCouponDate: block.timestamp,
-            status: BondStatus.Active
+            status: BondStatus.Active,
+            paymentCurrency: PaymentCurrency.ETH
         });
 
-        _mint(msg.sender, bondId, params.totalSupply, "");
         bondHoldings[bondId][msg.sender] = params.totalSupply;
+        _mint(msg.sender, bondId, params.totalSupply, "");
 
         emit BondIssued(bondId, msg.sender, params.bondType, params.totalSupply);
 
@@ -156,16 +162,15 @@ contract TwoDIBondTracker is
         TwoDIBond storage bond = bonds[bondId];
         require(bond.bondId != 0, "Bond does not exist");
         require(block.timestamp >= bond.maturityDate, "Not matured");
-        require(bond.status == BondStatus.Active, "Already redeemed");
+        require(bond.status == BondStatus.Active || bond.status == BondStatus.Matured, "Invalid status");
 
         uint256 holderShares = bondHoldings[bondId][msg.sender];
         require(holderShares > 0, "No holdings");
 
         uint256 redemptionAmount = (bond.faceValue * holderShares) / bond.totalSupply;
 
-        // SECURITY FIX: Update state before external calls
-        bond.status = BondStatus.Matured;
         bondHoldings[bondId][msg.sender] = 0;
+        bond.status = BondStatus.Matured;
         _burn(msg.sender, bondId, holderShares);
 
         (bool success, ) = msg.sender.call{value: redemptionAmount}("");
@@ -175,20 +180,45 @@ contract TwoDIBondTracker is
     }
 
     function _getBondHolders(uint256 bondId) internal view returns (address[] memory) {
-        uint256 count = 0;
-        address[] memory tempHolders = new address[](100);
+        return bondHolders[bondId];
+    }
 
-        // This is simplified - in production would need better tracking
-        for (uint256 i = 0; i < 100 && count < 100; i++) {
-            // Would track holders properly in production
+    function _addBondHolder(uint256 bondId, address holder) internal {
+        if (holderIndex[bondId][holder] == 0 && balanceOf(holder, bondId) == 0) {
+            bondHolders[bondId].push(holder);
+            holderIndex[bondId][holder] = bondHolders[bondId].length;
         }
+    }
 
-        address[] memory holders = new address[](count);
-        for (uint256 i = 0; i < count; i++) {
-            holders[i] = tempHolders[i];
+    function _removeBondHolder(uint256 bondId, address holder) internal {
+        uint256 index = holderIndex[bondId][holder];
+        if (index > 0 && balanceOf(holder, bondId) == 0) {
+            uint256 lastIndex = bondHolders[bondId].length - 1;
+            address lastHolder = bondHolders[bondId][lastIndex];
+
+            bondHolders[bondId][index - 1] = lastHolder;
+            holderIndex[bondId][lastHolder] = index;
+
+            bondHolders[bondId].pop();
+            delete holderIndex[bondId][holder];
         }
+    }
 
-        return holders;
+    function _update(address from, address to, uint256[] memory ids, uint256[] memory values)
+        internal
+        virtual
+        override
+    {
+        super._update(from, to, ids, values);
+
+        for (uint256 i = 0; i < ids.length; i++) {
+            if (from != address(0) && balanceOf(from, ids[i]) == 0) {
+                _removeBondHolder(ids[i], from);
+            }
+            if (to != address(0) && holderIndex[ids[i]][to] == 0) {
+                _addBondHolder(ids[i], to);
+            }
+        }
     }
 
     function pause() external onlyRole(ADMIN_ROLE) {

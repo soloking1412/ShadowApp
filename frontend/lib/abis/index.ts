@@ -13,6 +13,10 @@ import InfrastructureAssetsABI from './InfrastructureAssets.json';
 import PrimeBrokerageABI from './PrimeBrokerage.json';
 import LiquidityAsAServiceABI from './LiquidityAsAService.json';
 import SpecialEconomicZoneABI from './SpecialEconomicZone.json';
+import OGRBlacklistABI from './OGRBlacklist.json';
+import InviteManagerABI from './InviteManager.json';
+import PriceOracleAggregatorABI from './PriceOracleAggregator.json';
+import UniversalAMMABI from './UniversalAMM.json';
 
 export {
   OICDTreasuryABI,
@@ -30,4 +34,8 @@ export {
   PrimeBrokerageABI,
   LiquidityAsAServiceABI,
   SpecialEconomicZoneABI,
+  OGRBlacklistABI,
+  InviteManagerABI,
+  PriceOracleAggregatorABI,
+  UniversalAMMABI,
 };

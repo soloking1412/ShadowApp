@@ -9,9 +9,25 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts/token/ERC1155/IERC1155.sol";
 
 /**
- * @title DarkPool - Anonymous Trading Venue
+ * @title IZKVerifier
+ * @notice Interface for Zero-Knowledge proof verification
+ */
+interface IZKVerifier {
+    function verifyProof(
+        uint256[2] memory a,
+        uint256[2][2] memory b,
+        uint256[2] memory c,
+        uint256[] memory publicInputs
+    ) external returns (bool);
+
+    function isNullifierUsed(bytes32 nullifier) external view returns (bool);
+    function isCommitmentVerified(bytes32 commitment) external view returns (bool);
+}
+
+/**
+ * @title DarkPool - Anonymous Trading Venue with ZK Privacy
  * @notice Private, stealth trading for institutional and retail investors
- * @dev Implements dark pool mechanics with privacy-preserving features
+ * @dev Implements dark pool mechanics with ZK-SNARK privacy-preserving features
  */
 contract DarkPool is
     Initializable,
@@ -24,6 +40,21 @@ contract DarkPool is
     bytes32 public constant OPERATOR_ROLE = keccak256("OPERATOR_ROLE");
     bytes32 public constant VERIFIED_TRADER_ROLE = keccak256("VERIFIED_TRADER_ROLE");
     bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
+
+    // ZK Privacy - Commit-Reveal Pattern
+    IZKVerifier public zkVerifier;
+
+    // Commitment storage for hidden orders
+    mapping(bytes32 => bool) public commitments;
+    mapping(bytes32 => uint256) public commitmentTimestamps;
+    mapping(bytes32 => address) public commitmentOwners;
+    mapping(bytes32 => uint256) public commitmentEscrow; // Escrowed ETH for buy orders
+
+    // MEV protection: minimum delay before reveal
+    uint256 public constant REVEAL_DELAY = 30 minutes;
+
+    // Commitment expiry (prevent stale commitments)
+    uint256 public constant COMMITMENT_EXPIRY = 24 hours;
 
     enum OrderType {
         Market,
@@ -127,6 +158,12 @@ contract DarkPool is
     event TradeSettled(uint256 indexed matchId);
     event TokenWhitelisted(address indexed token);
 
+    // ZK Privacy Events
+    event OrderCommitted(bytes32 indexed commitment, address indexed trader, uint256 escrowAmount);
+    event OrderRevealed(bytes32 indexed commitment, bytes32 indexed orderHash, address indexed trader);
+    event CommitmentCancelled(bytes32 indexed commitment, address indexed trader, uint256 refundAmount);
+    event ZKVerifierUpdated(address indexed oldVerifier, address indexed newVerifier);
+
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
@@ -153,7 +190,177 @@ contract DarkPool is
         feeCollector = _feeCollector;
     }
 
-    function placeOrder(
+    // ============ ZK VERIFIER MANAGEMENT ============
+
+    /**
+     * @notice Set the ZK Verifier contract address
+     * @param _zkVerifier Address of the ZKVerifier contract
+     */
+    function setZKVerifier(address _zkVerifier) external onlyRole(ADMIN_ROLE) {
+        require(_zkVerifier != address(0), "Invalid verifier address");
+        address oldVerifier = address(zkVerifier);
+        zkVerifier = IZKVerifier(_zkVerifier);
+        emit ZKVerifierUpdated(oldVerifier, _zkVerifier);
+    }
+
+    // ============ COMMIT-REVEAL PATTERN FOR PRIVATE ORDERS ============
+
+    /**
+     * @notice Commit to a hidden order (Phase 1 of commit-reveal)
+     * @param commitment The Poseidon hash commitment of order details
+     * @dev For buy orders, ETH must be escrowed with the commitment
+     */
+    function commitOrder(bytes32 commitment) external payable onlyRole(VERIFIED_TRADER_ROLE) whenNotPaused {
+        require(commitment != bytes32(0), "Invalid commitment");
+        require(!commitments[commitment], "Commitment already exists");
+
+        commitments[commitment] = true;
+        commitmentTimestamps[commitment] = block.timestamp;
+        commitmentOwners[commitment] = msg.sender;
+
+        // Store escrowed ETH for buy orders
+        if (msg.value > 0) {
+            commitmentEscrow[commitment] = msg.value;
+        }
+
+        emit OrderCommitted(commitment, msg.sender, msg.value);
+    }
+
+    /**
+     * @notice Reveal a committed order with ZK proof (Phase 2 of commit-reveal)
+     * @param a Groth16 proof element A
+     * @param b Groth16 proof element B
+     * @param c Groth16 proof element C
+     * @param publicInputs Public inputs [commitment, nullifier]
+     * @param tokenAddress Token contract address
+     * @param tokenId Token ID
+     * @param orderType Type of order
+     * @param side Buy or Sell
+     * @param amount Order amount
+     * @param price Order price
+     * @param minFillAmount Minimum fill requirement
+     * @param expiry Order expiration timestamp
+     */
+    function revealOrder(
+        uint256[2] memory a,
+        uint256[2][2] memory b,
+        uint256[2] memory c,
+        uint256[] memory publicInputs,
+        address tokenAddress,
+        uint256 tokenId,
+        OrderType orderType,
+        OrderSide side,
+        uint256 amount,
+        uint256 price,
+        uint256 minFillAmount,
+        uint256 expiry
+    ) external onlyRole(VERIFIED_TRADER_ROLE) whenNotPaused nonReentrant returns (bytes32) {
+        require(address(zkVerifier) != address(0), "ZK verifier not set");
+        require(publicInputs.length == 2, "Invalid public inputs");
+
+        bytes32 commitment = bytes32(publicInputs[0]);
+
+        // Verify commitment exists and belongs to caller
+        require(commitments[commitment], "Commitment does not exist");
+        require(commitmentOwners[commitment] == msg.sender, "Not commitment owner");
+
+        // Enforce reveal delay (MEV protection)
+        require(
+            block.timestamp >= commitmentTimestamps[commitment] + REVEAL_DELAY,
+            "Reveal too early"
+        );
+
+        // Check commitment hasn't expired
+        require(
+            block.timestamp <= commitmentTimestamps[commitment] + COMMITMENT_EXPIRY,
+            "Commitment expired"
+        );
+
+        // Verify ZK proof
+        require(zkVerifier.verifyProof(a, b, c, publicInputs), "Invalid ZK proof");
+
+        // Mark commitment as used
+        delete commitments[commitment];
+
+        // Get escrowed amount for buy orders
+        uint256 escrowedAmount = commitmentEscrow[commitment];
+        delete commitmentEscrow[commitment];
+        delete commitmentTimestamps[commitment];
+        delete commitmentOwners[commitment];
+
+        // Execute order placement (internal)
+        return _placeOrderInternal(
+            tokenAddress,
+            tokenId,
+            orderType,
+            side,
+            amount,
+            price,
+            minFillAmount,
+            expiry,
+            false, // ZK orders are always private
+            escrowedAmount,
+            commitment
+        );
+    }
+
+    /**
+     * @notice Cancel a pending commitment and reclaim escrowed funds
+     * @param commitment The commitment to cancel
+     */
+    function cancelCommitment(bytes32 commitment) external nonReentrant {
+        require(commitments[commitment], "Commitment does not exist");
+        require(commitmentOwners[commitment] == msg.sender, "Not commitment owner");
+
+        // Mark as cancelled
+        delete commitments[commitment];
+        delete commitmentTimestamps[commitment];
+        delete commitmentOwners[commitment];
+
+        // Refund escrowed ETH
+        uint256 escrowAmount = commitmentEscrow[commitment];
+        delete commitmentEscrow[commitment];
+
+        if (escrowAmount > 0) {
+            (bool success, ) = payable(msg.sender).call{value: escrowAmount}("");
+            require(success, "Refund failed");
+        }
+
+        emit CommitmentCancelled(commitment, msg.sender, escrowAmount);
+    }
+
+    /**
+     * @notice Check if a commitment is valid and pending
+     * @param commitment The commitment hash to check
+     */
+    function isCommitmentPending(bytes32 commitment) external view returns (bool) {
+        return commitments[commitment];
+    }
+
+    /**
+     * @notice Get commitment details
+     * @param commitment The commitment hash
+     */
+    function getCommitmentDetails(bytes32 commitment) external view returns (
+        bool exists,
+        uint256 timestamp,
+        address owner,
+        uint256 escrowAmount,
+        bool canReveal
+    ) {
+        exists = commitments[commitment];
+        timestamp = commitmentTimestamps[commitment];
+        owner = commitmentOwners[commitment];
+        escrowAmount = commitmentEscrow[commitment];
+        canReveal = exists && (block.timestamp >= timestamp + REVEAL_DELAY);
+    }
+
+    // ============ INTERNAL ORDER PLACEMENT ============
+
+    /**
+     * @notice Internal function to place order (used by both direct and ZK reveal)
+     */
+    function _placeOrderInternal(
         address tokenAddress,
         uint256 tokenId,
         OrderType orderType,
@@ -162,19 +369,19 @@ contract DarkPool is
         uint256 price,
         uint256 minFillAmount,
         uint256 expiry,
-        bool isPublic
-    ) external payable onlyRole(VERIFIED_TRADER_ROLE) whenNotPaused nonReentrant returns (bytes32) {
+        bool isPublic,
+        uint256 escrowedPayment,
+        bytes32 zkCommitment
+    ) internal returns (bytes32) {
         require(whitelistedTokens[tokenAddress], "Token not whitelisted");
         require(amount >= minOrderSize && amount <= maxOrderSize, "Invalid amount");
         require(expiry > block.timestamp, "Invalid expiry");
         require(minFillAmount <= amount, "Invalid min fill");
 
-        // SECURITY: Require payment escrow for buy orders
-        uint256 escrowedPayment = 0;
+        // For buy orders, verify sufficient escrow
         if (side == OrderSide.Buy) {
             uint256 totalPayment = amount * price;
-            require(msg.value >= totalPayment, "Insufficient payment for buy order");
-            escrowedPayment = totalPayment;
+            require(escrowedPayment >= totalPayment, "Insufficient payment for buy order");
         }
 
         uint256 orderId = orderCounter++;
@@ -188,7 +395,8 @@ contract DarkPool is
                 side,
                 amount,
                 price,
-                block.timestamp
+                block.timestamp,
+                zkCommitment // Include ZK commitment in hash for traceability
             )
         );
 
@@ -238,7 +446,44 @@ contract DarkPool is
 
         emit OrderPlaced(orderHash, msg.sender, orderType, amount);
 
+        if (zkCommitment != bytes32(0)) {
+            emit OrderRevealed(zkCommitment, orderHash, msg.sender);
+        }
+
         return orderHash;
+    }
+
+    // ============ PUBLIC ORDER PLACEMENT (NON-ZK) ============
+
+    /**
+     * @notice Place a public order directly (non-ZK)
+     * @dev For private orders, use commitOrder + revealOrder instead
+     */
+    function placeOrder(
+        address tokenAddress,
+        uint256 tokenId,
+        OrderType orderType,
+        OrderSide side,
+        uint256 amount,
+        uint256 price,
+        uint256 minFillAmount,
+        uint256 expiry,
+        bool isPublic
+    ) external payable onlyRole(VERIFIED_TRADER_ROLE) whenNotPaused nonReentrant returns (bytes32) {
+        // For public/direct orders, use the internal function
+        return _placeOrderInternal(
+            tokenAddress,
+            tokenId,
+            orderType,
+            side,
+            amount,
+            price,
+            minFillAmount,
+            expiry,
+            isPublic,
+            msg.value, // Pass ETH as escrow
+            bytes32(0) // No ZK commitment for direct orders
+        );
     }
 
     function matchOrders(
@@ -343,12 +588,12 @@ contract DarkPool is
             ""
         );
 
-        // Transfer payment to seller
-        payable(sellOrder.trader).transfer(sellerProceeds);
+        (bool successSeller, ) = payable(sellOrder.trader).call{value: sellerProceeds}("");
+        require(successSeller, "Seller transfer failed");
 
-        // Transfer fee to fee collector
         if (fee > 0) {
-            payable(feeCollector).transfer(fee);
+            (bool successFee, ) = payable(feeCollector).call{value: fee}("");
+            require(successFee, "Fee transfer failed");
         }
 
         matchData.settled = true;
@@ -374,11 +619,11 @@ contract DarkPool is
             );
         }
 
-        // SECURITY: Return escrowed payment if buy order
         if (order.side == OrderSide.Buy && order.escrowedPayment > 0) {
             uint256 refundAmount = (order.escrowedPayment * remainingAmount) / order.amount;
             if (refundAmount > 0) {
-                payable(msg.sender).transfer(refundAmount);
+                (bool success, ) = payable(msg.sender).call{value: refundAmount}("");
+                require(success, "Refund transfer failed");
             }
         }
 

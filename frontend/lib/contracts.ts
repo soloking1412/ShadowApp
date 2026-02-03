@@ -2,13 +2,9 @@ export const CONTRACTS = {
   OICDTreasury: process.env.NEXT_PUBLIC_OICD_TREASURY_ADDRESS as `0x${string}`,
   TwoDIBondTracker: process.env.NEXT_PUBLIC_TWODI_BOND_TRACKER_ADDRESS as `0x${string}`,
   DarkPool: process.env.NEXT_PUBLIC_DARK_POOL_ADDRESS as `0x${string}`,
-  CentralizedExchange: process.env.NEXT_PUBLIC_CEX_ADDRESS as `0x${string}`,
-  IBANBankingSystem: process.env.NEXT_PUBLIC_IBAN_BANKING_ADDRESS as `0x${string}`,
   FractionalReserveBanking: process.env.NEXT_PUBLIC_FRACTIONAL_RESERVE_ADDRESS as `0x${string}`,
   ForexReservesTracker: process.env.NEXT_PUBLIC_FOREX_RESERVES_ADDRESS as `0x${string}`,
   SovereignInvestmentDAO: process.env.NEXT_PUBLIC_SOVEREIGN_DAO_ADDRESS as `0x${string}`,
-  DebtSecuritiesIssuance: process.env.NEXT_PUBLIC_DEBT_SECURITIES_ADDRESS as `0x${string}`,
-  InfrastructureBonds: process.env.NEXT_PUBLIC_INFRASTRUCTURE_BONDS_ADDRESS as `0x${string}`,
   GovernmentSecuritiesSettlement: process.env.NEXT_PUBLIC_GOV_SECURITIES_ADDRESS as `0x${string}`,
   DigitalTradeBlocks: process.env.NEXT_PUBLIC_DIGITAL_TRADE_BLOCKS_ADDRESS as `0x${string}`,
   OZFParliament: process.env.NEXT_PUBLIC_OZF_PARLIAMENT_ADDRESS as `0x${string}`,
@@ -18,6 +14,10 @@ export const CONTRACTS = {
   PrimeBrokerage: process.env.NEXT_PUBLIC_PRIME_BROKERAGE_ADDRESS as `0x${string}`,
   LiquidityAsAService: process.env.NEXT_PUBLIC_LIQUIDITY_SERVICE_ADDRESS as `0x${string}`,
   SpecialEconomicZone: process.env.NEXT_PUBLIC_SEZ_ADDRESS as `0x${string}`,
+  OGRBlacklist: process.env.NEXT_PUBLIC_OGR_BLACKLIST_ADDRESS as `0x${string}`,
+  InviteManager: process.env.NEXT_PUBLIC_INVITE_MANAGER_ADDRESS as `0x${string}`,
+  PriceOracleAggregator: process.env.NEXT_PUBLIC_PRICE_ORACLE_ADDRESS as `0x${string}`,
+  UniversalAMM: process.env.NEXT_PUBLIC_UNIVERSAL_AMM_ADDRESS as `0x${string}`,
 };
 
 export const CURRENCIES = {

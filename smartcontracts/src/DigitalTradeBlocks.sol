@@ -265,11 +265,13 @@ contract DigitalTradeBlocks is
         ownerBlocks[msg.sender].push(tokenId);
 
         // Transfer payment
-        payable(seller).transfer(offer.price);
+        (bool successSeller, ) = payable(seller).call{value: offer.price}("");
+        require(successSeller, "Payment transfer failed");
 
         // Refund excess
         if (msg.value > offer.price) {
-            payable(msg.sender).transfer(msg.value - offer.price);
+            (bool successRefund, ) = payable(msg.sender).call{value: msg.value - offer.price}("");
+            require(successRefund, "Refund transfer failed");
         }
 
         // Mark offer as inactive

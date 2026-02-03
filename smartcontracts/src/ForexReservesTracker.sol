@@ -105,13 +105,17 @@ contract ForexReservesTracker is
         _initializeCurrencies();
     }
 
+    address public ammAddress;
+
     function _initializeCurrencies() internal {
-        string[46] memory currencyList = [
+        string[61] memory currencyList = [
             "USD", "EUR", "GBP", "JPY", "CHF", "CNY", "AUD", "CAD", "OTD",
             "RUB", "IDR", "MMK", "THB", "SGD", "EGP", "LYD", "LBP", "ILS",
             "JOD", "BAM", "SYP", "ALL", "BRL", "GEL", "DZD", "MAD", "KRW",
             "AMD", "NGN", "INR", "CLP", "ARS", "ZAR", "TND", "COP", "VES",
-            "BOB", "MXN", "SAR", "QAR", "KWD", "OMR", "YER", "IQD", "IRR", "AED"
+            "BOB", "MXN", "SAR", "QAR", "KWD", "OMR", "YER", "IQD", "IRR", "AED",
+            "AOA", "PLN", "HUF", "CZK", "RSD", "TRY", "BDT", "LKR", "UZS",
+            "KZT", "TJS", "TMT", "AZN", "HKD", "MYR"
         ];
 
         for (uint256 i = 0; i < currencyList.length; i++) {
@@ -128,6 +132,11 @@ contract ForexReservesTracker is
                 lastUpdate: block.timestamp
             });
         }
+    }
+
+    function setAMMAddress(address _ammAddress) external onlyRole(ADMIN_ROLE) {
+        require(_ammAddress != address(0), "Invalid AMM address");
+        ammAddress = _ammAddress;
     }
 
     function updateReserve(
