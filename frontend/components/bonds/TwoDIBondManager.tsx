@@ -5,6 +5,10 @@ import { useAccount, useWriteContract, useWaitForTransactionReceipt } from 'wagm
 import { CONTRACTS, BOND_TYPES, DERIVATIVE_TYPES } from '@/lib/contracts';
 import { parseEther } from 'viem';
 
+const safeEther = (v: string) => { try { return parseEther(v || '0'); } catch { return 0n; } };
+const safeBig   = (v: string) => { try { return v ? BigInt(v) : 0n; } catch { return 0n; } };
+const ZERO_BYTES32 = ('0x' + '0'.repeat(64)) as `0x${string}`;
+
 export default function TwoDIBondManager() {
   const { address } = useAccount();
   const [activeTab, setActiveTab] = useState<'bonds' | 'derivatives'>('bonds');
@@ -39,14 +43,14 @@ export default function TwoDIBondManager() {
           bondType,
           projectName,
           country,
-          parseEther(totalSupply),
-          parseEther(faceValue),
-          BigInt(Number(couponRate) * 100),
-          BigInt(new Date(maturityDate).getTime() / 1000),
+          safeEther(totalSupply),
+          safeEther(faceValue),
+          (() => { try { return BigInt(Math.round(Number(couponRate) * 100)); } catch { return 0n; } })(),
+          (() => { try { return BigInt(Math.floor(new Date(maturityDate).getTime() / 1000)); } catch { return 0n; } })(),
           parseEther('1000000'),
           parseEther('500000'),
           BigInt(85),
-          '0x',
+          ZERO_BYTES32,
         ],
       });
     } catch (error) {
@@ -63,12 +67,12 @@ export default function TwoDIBondManager() {
         abi: BOND_ABI,
         functionName: 'issueDerivative',
         args: [
-          BigInt(underlyingBondId),
+          safeBig(underlyingBondId),
           derivativeType,
-          parseEther(notionalValue),
-          parseEther(strikePrice),
-          BigInt(new Date(expirationDate).getTime() / 1000),
-          parseEther(premium),
+          safeEther(notionalValue),
+          safeEther(strikePrice),
+          (() => { try { return BigInt(Math.floor(new Date(expirationDate).getTime() / 1000)); } catch { return 0n; } })(),
+          safeEther(premium),
         ],
       });
     } catch (error) {

@@ -1,4 +1,15 @@
 import OICDTreasuryABI from './OICDTreasury.json';
+import AVSPlatformABI from './AVSPlatform.json';
+import OTDTokenABI from './OTDToken.json';
+import OrionScoreABI from './OrionScore.json';
+import FreeTradeRegistryABI from './FreeTradeRegistry.json';
+import ICFLendingABI from './ICFLending.json';
+import PreAllocationABI from './PreAllocation.json';
+import JobsBoardABI from './JobsBoard.json';
+import SovereignDEXABI from './SovereignDEX.json';
+import BondAuctionHouseABI from './BondAuctionHouse.json';
+import PublicBrokerRegistryABI from './PublicBrokerRegistry.json';
+import HFTEngineABI from './HFTEngine.json';
 import TwoDIBondTrackerABI from './TwoDIBondTracker.json';
 import DarkPoolABI from './DarkPool.json';
 import FractionalReserveBankingABI from './FractionalReserveBanking.json';
@@ -17,6 +28,8 @@ import OGRBlacklistABI from './OGRBlacklist.json';
 import InviteManagerABI from './InviteManager.json';
 import PriceOracleAggregatorABI from './PriceOracleAggregator.json';
 import UniversalAMMABI from './UniversalAMM.json';
+import DigitalTradeExchangeABI from './DigitalTradeExchange.json';
+import DCMMarketCharterABI from './DCMMarketCharter.json';
 
 export {
   OICDTreasuryABI,
@@ -38,4 +51,19 @@ export {
   InviteManagerABI,
   PriceOracleAggregatorABI,
   UniversalAMMABI,
+  SovereignDEXABI,
+  BondAuctionHouseABI,
+  PublicBrokerRegistryABI,
+  HFTEngineABI,
+  // Phase 3
+  AVSPlatformABI,
+  OTDTokenABI,
+  OrionScoreABI,
+  FreeTradeRegistryABI,
+  ICFLendingABI,
+  PreAllocationABI,
+  JobsBoardABI,
+  // Phase 4
+  DigitalTradeExchangeABI,
+  DCMMarketCharterABI,
 };

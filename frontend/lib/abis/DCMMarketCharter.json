@@ -1,0 +1,227 @@
+[
+  {
+    "type": "constructor",
+    "inputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "initialize",
+    "inputs": [{"name": "_owner","type": "address","internalType": "address"}],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "updateMetric",
+    "inputs": [
+      {"name": "_pillarIdx","type": "uint8","internalType": "uint8"},
+      {"name": "_metricIdx","type": "uint8","internalType": "uint8"},
+      {"name": "_score","type": "uint8","internalType": "uint8"}
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "updateAllMetrics",
+    "inputs": [
+      {"name": "_scores","type": "uint8[16]","internalType": "uint8[16]"}
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "publishReport",
+    "inputs": [],
+    "outputs": [{"name": "reportId","type": "uint256","internalType": "uint256"}],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "subscribe",
+    "inputs": [
+      {"name": "_subscriber","type": "address","internalType": "address"},
+      {"name": "_tier","type": "uint8","internalType": "uint8"},
+      {"name": "_months","type": "uint256","internalType": "uint256"}
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "isActiveSubscriber",
+    "inputs": [{"name": "_addr","type": "address","internalType": "address"}],
+    "outputs": [{"name": "","type": "bool","internalType": "bool"}],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "setFees",
+    "inputs": [
+      {"name": "_retailFee","type": "uint256","internalType": "uint256"},
+      {"name": "_institutionalFee","type": "uint256","internalType": "uint256"}
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "getCurrentScore",
+    "inputs": [],
+    "outputs": [
+      {"name": "total","type": "uint16","internalType": "uint16"},
+      {"name": "p1","type": "uint8","internalType": "uint8"},
+      {"name": "p2","type": "uint8","internalType": "uint8"},
+      {"name": "p3","type": "uint8","internalType": "uint8"},
+      {"name": "p4","type": "uint8","internalType": "uint8"}
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getPillar",
+    "inputs": [{"name": "_idx","type": "uint8","internalType": "uint8"}],
+    "outputs": [
+      {"name": "name","type": "string","internalType": "string"},
+      {"name": "score","type": "uint8","internalType": "uint8"},
+      {"name": "metricNames","type": "string[4]","internalType": "string[4]"},
+      {"name": "metricScores","type": "uint8[4]","internalType": "uint8[4]"}
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getReport",
+    "inputs": [{"name": "_id","type": "uint256","internalType": "uint256"}],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple",
+        "internalType": "struct DCMMarketCharter.HealthReport",
+        "components": [
+          {"name": "totalScore","type": "uint16","internalType": "uint16"},
+          {"name": "pillar1","type": "uint8","internalType": "uint8"},
+          {"name": "pillar2","type": "uint8","internalType": "uint8"},
+          {"name": "pillar3","type": "uint8","internalType": "uint8"},
+          {"name": "pillar4","type": "uint8","internalType": "uint8"},
+          {"name": "reportedAt","type": "uint256","internalType": "uint256"},
+          {"name": "reportedBy","type": "address","internalType": "address"}
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "reportCount",
+    "inputs": [],
+    "outputs": [{"name": "","type": "uint256","internalType": "uint256"}],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "PILLARS",
+    "inputs": [],
+    "outputs": [{"name": "","type": "uint8","internalType": "uint8"}],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "METRICS",
+    "inputs": [],
+    "outputs": [{"name": "","type": "uint8","internalType": "uint8"}],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "MAX_SCORE",
+    "inputs": [],
+    "outputs": [{"name": "","type": "uint16","internalType": "uint16"}],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "retailFeePerMonth",
+    "inputs": [],
+    "outputs": [{"name": "","type": "uint256","internalType": "uint256"}],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "institutionalFeePerMonth",
+    "inputs": [],
+    "outputs": [{"name": "","type": "uint256","internalType": "uint256"}],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "transactionFeeBps",
+    "inputs": [],
+    "outputs": [{"name": "","type": "uint256","internalType": "uint256"}],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "subscribers",
+    "inputs": [{"name": "","type": "address","internalType": "address"}],
+    "outputs": [
+      {"name": "active","type": "bool","internalType": "bool"},
+      {"name": "tier","type": "uint8","internalType": "uint8"},
+      {"name": "expiresAt","type": "uint256","internalType": "uint256"}
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "owner",
+    "inputs": [],
+    "outputs": [{"name": "","type": "address","internalType": "address"}],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "upgradeTo",
+    "inputs": [{"name": "newImplementation","type": "address","internalType": "address"}],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "event",
+    "name": "MetricUpdated",
+    "inputs": [
+      {"name": "pillarIdx","type": "uint8","indexed": false,"internalType": "uint8"},
+      {"name": "metricIdx","type": "uint8","indexed": false,"internalType": "uint8"},
+      {"name": "score","type": "uint8","indexed": false,"internalType": "uint8"},
+      {"name": "name","type": "string","indexed": false,"internalType": "string"}
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "HealthReportPublished",
+    "inputs": [
+      {"name": "reportId","type": "uint256","indexed": true,"internalType": "uint256"},
+      {"name": "totalScore","type": "uint16","indexed": false,"internalType": "uint16"},
+      {"name": "reporter","type": "address","indexed": false,"internalType": "address"}
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "SubscriberAdded",
+    "inputs": [
+      {"name": "subscriber","type": "address","indexed": true,"internalType": "address"},
+      {"name": "tier","type": "uint8","indexed": false,"internalType": "uint8"},
+      {"name": "expiresAt","type": "uint256","indexed": false,"internalType": "uint256"}
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "Initialized",
+    "inputs": [{"name": "version","type": "uint64","indexed": false,"internalType": "uint64"}],
+    "anonymous": false
+  }
+]

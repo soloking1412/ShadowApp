@@ -18,6 +18,22 @@ export const CONTRACTS = {
   InviteManager: process.env.NEXT_PUBLIC_INVITE_MANAGER_ADDRESS as `0x${string}`,
   PriceOracleAggregator: process.env.NEXT_PUBLIC_PRICE_ORACLE_ADDRESS as `0x${string}`,
   UniversalAMM: process.env.NEXT_PUBLIC_UNIVERSAL_AMM_ADDRESS as `0x${string}`,
+  // Phase 2C
+  SovereignDEX: process.env.NEXT_PUBLIC_SOVEREIGN_DEX_ADDRESS as `0x${string}`,
+  BondAuctionHouse: process.env.NEXT_PUBLIC_BOND_AUCTION_ADDRESS as `0x${string}`,
+  PublicBrokerRegistry: process.env.NEXT_PUBLIC_BROKER_REGISTRY_ADDRESS as `0x${string}`,
+  HFTEngine: process.env.NEXT_PUBLIC_HFT_ENGINE_ADDRESS as `0x${string}`,
+  // Phase 3
+  AVSPlatform: process.env.NEXT_PUBLIC_AVS_PLATFORM_ADDRESS as `0x${string}`,
+  OTDToken: process.env.NEXT_PUBLIC_OTD_TOKEN_ADDRESS as `0x${string}`,
+  OrionScore: process.env.NEXT_PUBLIC_ORION_SCORE_ADDRESS as `0x${string}`,
+  FreeTradeRegistry: process.env.NEXT_PUBLIC_FREE_TRADE_REGISTRY_ADDRESS as `0x${string}`,
+  ICFLending: process.env.NEXT_PUBLIC_ICF_LENDING_ADDRESS as `0x${string}`,
+  PreAllocation: process.env.NEXT_PUBLIC_PRE_ALLOCATION_ADDRESS as `0x${string}`,
+  JobsBoard: process.env.NEXT_PUBLIC_JOBS_BOARD_ADDRESS as `0x${string}`,
+  // Phase 4
+  DigitalTradeExchange: process.env.NEXT_PUBLIC_DTX_ADDRESS as `0x${string}`,
+  DCMMarketCharter: process.env.NEXT_PUBLIC_DCM_CHARTER_ADDRESS as `0x${string}`,
 };
 
 export const CURRENCIES = {

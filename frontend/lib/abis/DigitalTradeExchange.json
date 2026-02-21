@@ -1,0 +1,265 @@
+[
+  {
+    "type": "constructor",
+    "inputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "initialize",
+    "inputs": [{"name": "_owner","type": "address","internalType": "address"}],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "listCompany",
+    "inputs": [
+      {"name": "_name","type": "string","internalType": "string"},
+      {"name": "_ticker","type": "string","internalType": "string"},
+      {"name": "_sector","type": "string","internalType": "string"},
+      {"name": "_center","type": "uint8","internalType": "enum DigitalTradeExchange.Center"},
+      {"name": "_sharesTotal","type": "uint256","internalType": "uint256"},
+      {"name": "_initialPrice","type": "uint256","internalType": "uint256"}
+    ],
+    "outputs": [{"name": "companyId","type": "uint256","internalType": "uint256"}],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "delistCompany",
+    "inputs": [{"name": "_companyId","type": "uint256","internalType": "uint256"}],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "executeTrade",
+    "inputs": [
+      {"name": "_companyId","type": "uint256","internalType": "uint256"},
+      {"name": "_seller","type": "address","internalType": "address"},
+      {"name": "_shares","type": "uint256","internalType": "uint256"},
+      {"name": "_priceOICD","type": "uint256","internalType": "uint256"}
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "updatePrice",
+    "inputs": [
+      {"name": "_companyId","type": "uint256","internalType": "uint256"},
+      {"name": "_newPrice","type": "uint256","internalType": "uint256"}
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "authorizeTrader",
+    "inputs": [
+      {"name": "_companyId","type": "uint256","internalType": "uint256"},
+      {"name": "_trader","type": "address","internalType": "address"}
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setCenterActive",
+    "inputs": [
+      {"name": "_center","type": "uint8","internalType": "enum DigitalTradeExchange.Center"},
+      {"name": "_active","type": "bool","internalType": "bool"}
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setListingFee",
+    "inputs": [{"name": "_feeOICD","type": "uint256","internalType": "uint256"}],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setTradingFee",
+    "inputs": [{"name": "_bps","type": "uint256","internalType": "uint256"}],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "companyCount",
+    "inputs": [],
+    "outputs": [{"name": "","type": "uint256","internalType": "uint256"}],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "tradeCount",
+    "inputs": [],
+    "outputs": [{"name": "","type": "uint256","internalType": "uint256"}],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getCenterListings",
+    "inputs": [{"name": "_centerId","type": "uint256","internalType": "uint256"}],
+    "outputs": [{"name": "","type": "uint256[]","internalType": "uint256[]"}],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getCompany",
+    "inputs": [{"name": "_id","type": "uint256","internalType": "uint256"}],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple",
+        "internalType": "struct DigitalTradeExchange.Company",
+        "components": [
+          {"name": "name","type": "string","internalType": "string"},
+          {"name": "ticker","type": "string","internalType": "string"},
+          {"name": "sector","type": "string","internalType": "string"},
+          {"name": "center","type": "uint8","internalType": "enum DigitalTradeExchange.Center"},
+          {"name": "registrant","type": "address","internalType": "address"},
+          {"name": "sharesTotal","type": "uint256","internalType": "uint256"},
+          {"name": "priceOICD","type": "uint256","internalType": "uint256"},
+          {"name": "listed","type": "bool","internalType": "bool"},
+          {"name": "listedAt","type": "uint256","internalType": "uint256"},
+          {"name": "marketCap","type": "uint256","internalType": "uint256"}
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getAllCenters",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple[5]",
+        "internalType": "struct DigitalTradeExchange.ExchangeCenter[5]",
+        "components": [
+          {"name": "name","type": "string","internalType": "string"},
+          {"name": "location","type": "string","internalType": "string"},
+          {"name": "country","type": "string","internalType": "string"},
+          {"name": "region","type": "string","internalType": "string"},
+          {"name": "active","type": "bool","internalType": "bool"},
+          {"name": "totalListings","type": "uint256","internalType": "uint256"}
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getRecentTrades",
+    "inputs": [{"name": "_count","type": "uint256","internalType": "uint256"}],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple[]",
+        "internalType": "struct DigitalTradeExchange.TradeRecord[]",
+        "components": [
+          {"name": "companyId","type": "uint256","internalType": "uint256"},
+          {"name": "buyer","type": "address","internalType": "address"},
+          {"name": "seller","type": "address","internalType": "address"},
+          {"name": "shares","type": "uint256","internalType": "uint256"},
+          {"name": "priceOICD","type": "uint256","internalType": "uint256"},
+          {"name": "timestamp","type": "uint256","internalType": "uint256"}
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "listingFeeOICD",
+    "inputs": [],
+    "outputs": [{"name": "","type": "uint256","internalType": "uint256"}],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "tradingFeesBps",
+    "inputs": [],
+    "outputs": [{"name": "","type": "uint256","internalType": "uint256"}],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "authorizedTraders",
+    "inputs": [
+      {"name": "","type": "uint256","internalType": "uint256"},
+      {"name": "","type": "address","internalType": "address"}
+    ],
+    "outputs": [{"name": "","type": "bool","internalType": "bool"}],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "owner",
+    "inputs": [],
+    "outputs": [{"name": "","type": "address","internalType": "address"}],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "upgradeTo",
+    "inputs": [{"name": "newImplementation","type": "address","internalType": "address"}],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "event",
+    "name": "CompanyListed",
+    "inputs": [
+      {"name": "id","type": "uint256","indexed": true,"internalType": "uint256"},
+      {"name": "ticker","type": "string","indexed": false,"internalType": "string"},
+      {"name": "center","type": "uint8","indexed": false,"internalType": "enum DigitalTradeExchange.Center"},
+      {"name": "registrant","type": "address","indexed": false,"internalType": "address"}
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "CompanyDelisted",
+    "inputs": [
+      {"name": "id","type": "uint256","indexed": true,"internalType": "uint256"},
+      {"name": "ticker","type": "string","indexed": false,"internalType": "string"}
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "TradeExecuted",
+    "inputs": [
+      {"name": "companyId","type": "uint256","indexed": true,"internalType": "uint256"},
+      {"name": "buyer","type": "address","indexed": false,"internalType": "address"},
+      {"name": "seller","type": "address","indexed": false,"internalType": "address"},
+      {"name": "shares","type": "uint256","indexed": false,"internalType": "uint256"},
+      {"name": "priceOICD","type": "uint256","indexed": false,"internalType": "uint256"}
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "PriceUpdated",
+    "inputs": [
+      {"name": "companyId","type": "uint256","indexed": true,"internalType": "uint256"},
+      {"name": "oldPrice","type": "uint256","indexed": false,"internalType": "uint256"},
+      {"name": "newPrice","type": "uint256","indexed": false,"internalType": "uint256"}
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "Initialized",
+    "inputs": [{"name": "version","type": "uint64","indexed": false,"internalType": "uint64"}],
+    "anonymous": false
+  }
+]

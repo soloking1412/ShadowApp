@@ -1,23 +1,30 @@
-version: '3.8'
-
 services:
   # Local Ethereum node using Foundry's Anvil
   anvil:
     image: ghcr.io/foundry-rs/foundry:latest
     container_name: shadowdapp-anvil
-    command: >
-      anvil
-      --host 0.0.0.0
-      --port 8545
-      --chain-id 31337
-      --accounts 10
-      --balance 10000
-      --block-time 2
-      --gas-limit 30000000
+    entrypoint: ["anvil"]
+    command:
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8545"
+      - "--chain-id"
+      - "31337"
+      - "--accounts"
+      - "10"
+      - "--balance"
+      - "10000"
+      - "--block-time"
+      - "2"
+      - "--gas-limit"
+      - "30000000"
+      - "--code-size-limit"
+      - "50000"
     ports:
       - "8545:8545"
     healthcheck:
-      test: ["CMD", "cast", "block-number", "--rpc-url", "http://localhost:8545"]
+      test: ["CMD-SHELL", "cast block-number --rpc-url http://localhost:8545"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -35,18 +42,9 @@ services:
     environment:
       - PRIVATE_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
       - RPC_URL=http://anvil:8545
-    command: >
-      sh -c "
-        echo 'Waiting for Anvil to be ready...' &&
-        sleep 10 &&
-        echo 'Deploying contracts...' &&
-        forge script script/DeployPhase1Production.s.sol:DeployPhase1Production \
-          --rpc-url http://anvil:8545 \
-          --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 \
-          --broadcast \
-          -vvv &&
-        echo 'Deployment complete!'
-      "
+      - FOUNDRY_DISABLE_NIGHTLY_WARNING=1
+      - FOUNDRY_CODE_SIZE_LIMIT=50000
+    command: "./deploy-local.sh"
     depends_on:
       anvil:
         condition: service_healthy
@@ -65,12 +63,21 @@ services:
       - NEXT_PUBLIC_RPC_URL=http://localhost:8545
       - NEXT_PUBLIC_CHAIN_ID=31337
       - NEXT_PUBLIC_WALLET_CONNECT_PROJECT_ID=${WALLET_CONNECT_PROJECT_ID:-}
-      # Contract addresses will be set after deployment
-      - NEXT_PUBLIC_OICD_TREASURY_ADDRESS=${OICD_TREASURY_ADDRESS:-0x5FbDB2315678afecb367f032d93F642f64180aa3}
-      - NEXT_PUBLIC_DARK_POOL_ADDRESS=${DARK_POOL_ADDRESS:-0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512}
-      - NEXT_PUBLIC_FRACTIONAL_RESERVE_ADDRESS=${FRACTIONAL_RESERVE_ADDRESS:-0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0}
-      - NEXT_PUBLIC_PRICE_ORACLE_ADDRESS=${PRICE_ORACLE_ADDRESS:-0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9}
-      - NEXT_PUBLIC_UNIVERSAL_AMM_ADDRESS=${UNIVERSAL_AMM_ADDRESS:-0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9}
+      # Contract proxy addresses (from Deploy.s.sol on local Anvil)
+      - NEXT_PUBLIC_OICD_TREASURY_ADDRESS=${OICD_TREASURY_ADDRESS:-0x5FC8d32690cc91D4c39d9d3abcBD16989F875707}
+      - NEXT_PUBLIC_TWODI_BOND_TRACKER_ADDRESS=${TWODI_BOND_TRACKER_ADDRESS:-0xa513E6E4b8f2a923D98304ec87F64353C4D5C853}
+      - NEXT_PUBLIC_DARK_POOL_ADDRESS=${DARK_POOL_ADDRESS:-0x8A791620dd6260079BF849Dc5567aDC3F2FdC318}
+      - NEXT_PUBLIC_FRACTIONAL_RESERVE_ADDRESS=${FRACTIONAL_RESERVE_ADDRESS:-0xB7f8BC63BbcaD18155201308C8f3540b07f84F5e}
+      - NEXT_PUBLIC_FOREX_RESERVES_ADDRESS=${FOREX_RESERVES_ADDRESS:-0x0DCd1Bf9A1b36cE34237eEaFef220932846BCD82}
+      - NEXT_PUBLIC_SOVEREIGN_DAO_ADDRESS=${SOVEREIGN_DAO_ADDRESS:-0x0B306BF915C4d645ff596e518fAf3F9669b97016}
+      - NEXT_PUBLIC_PRICE_ORACLE_ADDRESS=${PRICE_ORACLE_ADDRESS:-}
+      - NEXT_PUBLIC_UNIVERSAL_AMM_ADDRESS=${UNIVERSAL_AMM_ADDRESS:-0x0DCd1Bf9A1b36cE34237eEaFef220932846BCD82}
+      - NEXT_PUBLIC_INVITE_MANAGER_ADDRESS=${INVITE_MANAGER_ADDRESS:-0x0B306BF915C4d645ff596e518fAf3F9669b97016}
+      - NEXT_PUBLIC_OGR_BLACKLIST_ADDRESS=${OGR_BLACKLIST_ADDRESS:-0x9A9f2CCfdE556A7E9Ff0848998Aa4a0CFD8863AE}
+      - NEXT_PUBLIC_LIQUIDITY_SERVICE_ADDRESS=${LIQUIDITY_SERVICE_ADDRESS:-0x3Aa5ebB10DC797CAC828524e59A333d0A371443c}
+      - NEXT_PUBLIC_OBSIDIAN_CAPITAL_ADDRESS=${OBSIDIAN_CAPITAL_ADDRESS:-0x59b670e9fA9D0A427751Af201D676719a970857b}
+      - NEXT_PUBLIC_PRIME_BROKERAGE_ADDRESS=${PRIME_BROKERAGE_ADDRESS:-0x322813Fd9A801c5507c9de605d63CEA4f2CE6c44}
+      - NEXT_PUBLIC_ZK_VERIFIER_ADDRESS=${ZK_VERIFIER_ADDRESS:-0xa85233C63b9Ee964Add6F2cffe00Fd84eb32338f}
     depends_on:
       - deployer
     networks:
@@ -86,7 +93,7 @@ services:
     environment:
       - RPC_URL=http://anvil:8545
       - PRIVATE_KEY=${RELAYER_PRIVATE_KEY:-0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d}
-      - DARK_POOL_ADDRESS=${DARK_POOL_ADDRESS:-0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512}
+      - DARK_POOL_ADDRESS=${DARK_POOL_ADDRESS:-0x8A791620dd6260079BF849Dc5567aDC3F2FdC318}
     depends_on:
       - deployer
     networks:

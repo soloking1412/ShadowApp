@@ -7,6 +7,8 @@ optimizer = true
 optimizer_runs = 1
 evm_version = "paris"
 solc_version = "0.8.24"
+# Allow large contracts for local dev (Anvil does not enforce EIP-170)
+code_size_limit = 50000
 
 [rpc_endpoints]
 arbitrum = "${ARBITRUM_RPC_URL}"

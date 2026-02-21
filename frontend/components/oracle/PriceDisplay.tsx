@@ -1,7 +1,7 @@
 'use client';
 
 import { formatUnits } from 'viem';
-import { useGetLatestPrice, useGetAggregatedPrice, useIsPriceStale } from '@/hooks/contracts';
+import { useGetLatestPrice, useGetAggregatedPrice, useIsPriceStale } from '@/hooks/contracts/usePriceOracle';
 
 interface PriceDisplayProps {
   assetAddress: `0x${string}`;

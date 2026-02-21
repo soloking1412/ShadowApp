@@ -5,6 +5,10 @@
 .env.production
 .env.test
 
+.claude
+.claude/
+*.claude
+
 # Logs
 logs/
 *.log

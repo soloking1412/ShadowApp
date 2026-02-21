@@ -5,12 +5,21 @@ const nextConfig: NextConfig = {
   output: 'standalone',
 
   webpack: (config) => {
+    // Simple string externals for server-safe packages
     config.externals.push("pino-pretty", "lokijs", "encoding");
-    // Support for snarkjs WASM files
-    config.experiments = {
-      ...config.experiments,
-      asyncWebAssembly: true,
+
+    // Packages that contain WASM or Node.js-only code — exclude from browser bundle.
+    // The dynamic imports in useDarkPool.ts have keccak256 fallbacks.
+    config.externals.push("ffjavascript", "wasmcurves", "circomlibjs", "snarkjs");
+
+    // @react-native-async-storage/async-storage has an invalid identifier name
+    // (contains @ and /) — webpack generates `typeof @react-native-...` which is
+    // a SyntaxError. Use resolve.alias=false to emit an empty module instead.
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      '@react-native-async-storage/async-storage': false,
     };
+
     return config;
   },
 

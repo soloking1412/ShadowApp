@@ -1025,7 +1025,7 @@ contract OICDTreasury is
 
         // Approve AMM to spend tokens if needed
         if (tokenIn != address(0)) {
-            IERC20(tokenIn).safeApprove(universalAMM, amountIn);
+            IERC20(tokenIn).forceApprove(universalAMM, amountIn);
         }
 
         // Execute swap

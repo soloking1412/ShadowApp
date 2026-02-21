@@ -2,14 +2,15 @@
 
 import { useState } from 'react';
 import { formatUnits, parseUnits } from 'viem';
-import { useGetPool, useGetReserves, useAddLiquidity, useRemoveLiquidity, useGetUserLiquidity } from '@/hooks/contracts';
+import { useGetPool, useGetReserves, useAddLiquidity, useRemoveLiquidity, useGetUserLiquidity } from '@/hooks/contracts/useUniversalAMM';
 import { useAccount } from 'wagmi';
 
 interface LiquidityPoolProps {
   poolId: bigint;
+  poolExists?: boolean;
 }
 
-export function LiquidityPool({ poolId }: LiquidityPoolProps) {
+export function LiquidityPool({ poolId, poolExists = true }: LiquidityPoolProps) {
   const [amount0, setAmount0] = useState('');
   const [amount1, setAmount1] = useState('');
   const [sharesAmount, setSharesAmount] = useState('');
@@ -47,8 +48,22 @@ export function LiquidityPool({ poolId }: LiquidityPoolProps) {
 
   const poolData = pool as any;
 
+  if (!poolExists) {
+    return (
+      <div className="p-8 text-center bg-white/5 border border-white/10 rounded-lg">
+        <div className="text-4xl mb-3">💧</div>
+        <p className="text-gray-300 font-medium mb-1">No pools created yet</p>
+        <p className="text-gray-500 text-sm">Switch to the "+ Create Pool" tab to create the first AMM pool.</p>
+      </div>
+    );
+  }
+
   if (!pool) {
-    return <div>Pool not found</div>;
+    return (
+      <div className="p-6 text-center bg-white/5 border border-white/10 rounded-lg">
+        <p className="text-gray-400 text-sm">Pool #{poolId.toString()} not found. Enter a valid pool ID above.</p>
+      </div>
+    );
   }
 
   return (
