@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAccount } from 'wagmi';
 import { parseEther } from 'viem';
 import {
@@ -42,12 +42,34 @@ export default function ICFLendingDashboard() {
   const [lookupLoanId,setLookupLoanId]=useState('');
   const { data: loanData } = useICFGetLoan(lookupLoanId ? BigInt(lookupLoanId) : 0n);
 
-  const { applyICFLoan, isPending: applyingICF } = useICFApplyICFLoan();
-  const { applyFirst90, isPending: applyingF90 } = useICFApplyFirst90();
-  const { proveRevenue, isPending: proving } = useICFProveRevenue();
-  const { applyFFE, isPending: applyingFFE } = useICFApplyFFE();
-  const { confirmEmployment, isPending: confirming } = useICFConfirmEmployment();
-  const { repayLoan, isPending: repaying } = useICFRepayLoan();
+  const { applyICFLoan, isPending: applyingICF, isSuccess: icfDone, error: icfErr } = useICFApplyICFLoan();
+  const { applyFirst90, isPending: applyingF90, isSuccess: f90Done, error: f90Err } = useICFApplyFirst90();
+  const { proveRevenue, isPending: proving, isSuccess: proveDone, error: proveErr } = useICFProveRevenue();
+  const { applyFFE, isPending: applyingFFE, isSuccess: ffeDone, error: ffeErr } = useICFApplyFFE();
+  const { confirmEmployment, isPending: confirming, isSuccess: empDone, error: empErr } = useICFConfirmEmployment();
+  const { repayLoan, isPending: repaying, isSuccess: repayDone, error: repayErr } = useICFRepayLoan();
+
+  const [txError, setTxError] = useState<string | null>(null);
+  const [txSuccess, setTxSuccess] = useState<string | null>(null);
+  useEffect(() => {
+    const err = icfErr ?? f90Err ?? proveErr ?? ffeErr ?? empErr ?? repayErr;
+    if (!err) return;
+    const msg = (err as {shortMessage?:string})?.shortMessage ?? (err as {message?:string})?.message ?? 'Transaction failed';
+    setTxError(msg.length > 120 ? msg.slice(0, 120) + '…' : msg);
+    const t = setTimeout(() => setTxError(null), 7000);
+    return () => clearTimeout(t);
+  }, [icfErr, f90Err, proveErr, ffeErr, empErr, repayErr]);
+  useEffect(() => {
+    if (icfDone) { setTxSuccess('ICF loan application submitted'); }
+    else if (f90Done) { setTxSuccess('First90 zero-interest loan applied'); }
+    else if (proveDone) { setTxSuccess('Revenue proof submitted — +10 G-Score earned'); }
+    else if (ffeDone) { setTxSuccess('FFE education financing applied'); }
+    else if (empDone) { setTxSuccess('Employment confirmed — FFE repayment triggered'); }
+    else if (repayDone) { setTxSuccess('Loan repayment processed successfully'); }
+    else return;
+    const t = setTimeout(() => setTxSuccess(null), 5000);
+    return () => clearTimeout(t);
+  }, [icfDone, f90Done, proveDone, ffeDone, empDone, repayDone]);
 
   const TABS: {id:Tab;label:string}[] = [
     {id:'overview',label:'Overview'},{id:'icf',label:'ICF Loan'},
@@ -56,9 +78,36 @@ export default function ICFLendingDashboard() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold text-white">ICF Lending</h2>
-        <p className="text-gray-400 mt-1">Independent Capital Financing Platform. G-Score tiered loans, interest-free First90, Finance Forward Education (3.5% ISA), and sovereign debt restructuring.</p>
+      {txError && (
+        <div className="flex items-start gap-3 px-4 py-3 bg-red-900/40 border border-red-500/40 rounded-xl text-sm">
+          <span className="text-red-400 shrink-0 mt-0.5">✕</span>
+          <div className="flex-1"><p className="font-semibold text-red-300">Transaction failed</p><p className="text-red-400/80 text-xs mt-0.5">{txError}</p></div>
+          <button onClick={() => setTxError(null)} className="text-red-500 hover:text-red-300 text-xs shrink-0">dismiss</button>
+        </div>
+      )}
+      {txSuccess && (
+        <div className="flex items-center gap-2 px-4 py-3 bg-green-900/30 border border-green-500/30 rounded-xl text-sm">
+          <span className="text-green-400">✓</span><p className="text-green-300 font-semibold">{txSuccess}</p>
+        </div>
+      )}
+      <div className="bg-gradient-to-r from-indigo-900/40 to-blue-900/40 border border-indigo-700/50 rounded-xl p-6 space-y-4">
+        <div>
+          <h2 className="text-2xl font-bold text-white">ICF Lending</h2>
+          <p className="text-gray-400 mt-1 text-sm">Independent Capital Financing. Standard loans: $1M–$10M · $10M–$20M · $20M–$80M · $80M–$200M · $200M–$1B OICD · Terms: 5/10/15/20/30 yr. First90: 0% interest (prove revenue in 90 days). FFE: 3.5% income-share upon graduation + employment.</p>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {[
+            { label: 'Total Loans', value: String(loanCount??0) },
+            { label: 'Loans Issued', value: String(totalIssued??0) },
+            { label: 'Active Loans', value: String(active??0) },
+            { label: 'Programs', value: '4' },
+          ].map(s=>(
+            <div key={s.label} className="bg-white/5 border border-white/10 rounded-lg p-3 text-center">
+              <div className="text-white font-bold text-lg">{s.value}</div>
+              <div className="text-gray-400 text-xs mt-0.5">{s.label}</div>
+            </div>
+          ))}
+        </div>
       </div>
       <div className="flex gap-2 flex-wrap border-b border-white/10 pb-2">
         {TABS.map(t=><button key={t.id} onClick={()=>setTab(t.id)} className={tc(tab===t.id)}>{t.label}</button>)}

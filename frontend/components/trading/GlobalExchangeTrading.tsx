@@ -1,6 +1,8 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAccount } from 'wagmi';
+
+const POSITIONS_KEY = 'ozf_global_positions';
 
 interface Exchange {
   id: string;
@@ -52,20 +54,21 @@ interface Position {
   currency: string;
 }
 
-const SEED_POSITIONS: Position[] = [
-  { exchange: 'NYSE',    ticker: 'SPY',   side: 'BUY',  qty: 500,   price: 521.48, pnl:  14_220, currency: 'USD' },
-  { exchange: 'LSE',     ticker: 'SHEL',  side: 'BUY',  qty: 2000,  price: 26.32,  pnl:   3_840, currency: 'GBP' },
-  { exchange: 'B3',      ticker: 'PETR4', side: 'BUY',  qty: 10000, price: 38.12,  pnl:  -9_200, currency: 'BRL' },
-  { exchange: 'NSE',     ticker: 'RELIANCE', side: 'BUY', qty: 300, price: 2_891.5, pnl: 82_140, currency: 'INR' },
-  { exchange: 'Tadawul', ticker: '2222',  side: 'BUY',  qty: 1000,  price: 29.70,  pnl:   5_340, currency: 'SAR' },
-];
 
 export default function GlobalExchangeTrading() {
   const { isConnected } = useAccount();
   const [selectedRegion, setSelectedRegion] = useState('All');
   const [selectedExchange, setSelectedExchange] = useState<Exchange | null>(null);
   const [tab, setTab] = useState<'exchanges' | 'trade' | 'positions' | 'analytics'>('exchanges');
-  const [positions] = useState<Position[]>(SEED_POSITIONS);
+  const [positions, setPositions] = useState<Position[]>([]);
+
+  // Load persisted positions
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(POSITIONS_KEY);
+      if (stored) setPositions(JSON.parse(stored) as Position[]);
+    } catch { /* start empty */ }
+  }, []);
 
   // Trade form state
   const [orderExchange, setOrderExchange] = useState('NYSE');
@@ -245,7 +248,27 @@ export default function GlobalExchangeTrading() {
             </div>
 
             <button
-              onClick={() => { setOrderPlaced(true); setTimeout(() => setOrderPlaced(false), 3000); }}
+              onClick={() => {
+                if (!ticker || !qty) return;
+                const ex = EXCHANGES.find(e => e.name === orderExchange);
+                const newPos: Position = {
+                  exchange: orderExchange,
+                  ticker,
+                  side,
+                  qty: parseFloat(qty),
+                  price: parseFloat(price) || 0,
+                  pnl: 0,
+                  currency: ex?.currency ?? 'USD',
+                };
+                setPositions(prev => {
+                  const updated = [...prev, newPos];
+                  try { localStorage.setItem(POSITIONS_KEY, JSON.stringify(updated)); } catch { /* ignore */ }
+                  return updated;
+                });
+                setOrderPlaced(true);
+                setTicker(''); setQty(''); setPrice('');
+                setTimeout(() => setOrderPlaced(false), 3000);
+              }}
               disabled={!isConnected || !ticker || !qty}
               className={`w-full py-2.5 rounded text-sm font-bold transition-all ${
                 side === 'BUY'

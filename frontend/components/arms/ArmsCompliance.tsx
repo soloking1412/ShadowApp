@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAccount } from 'wagmi';
 import { formatEther, parseEther } from 'viem';
 const safeEther = (v: string) => { try { return parseEther(v || '0'); } catch { return 0n; } };
@@ -58,6 +58,24 @@ export default function ArmsComplianceDashboard() {
   const { applyForLicense, isPending: applying, isConfirming: applyConfirming, isSuccess: applySuccess, error: applyError } = useApplyForLicense();
   const { performSanctionsCheck, isPending: checking, isConfirming: checkConfirming, isSuccess: checkSuccess } = usePerformSanctionsCheck();
 
+  const [txError, setTxError] = useState<string|null>(null);
+  const [txSuccess, setTxSuccess] = useState<string|null>(null);
+  useEffect(() => {
+    const err = applyError;
+    if (!err) return;
+    const msg = (err as {shortMessage?:string})?.shortMessage ?? (err as {message?:string})?.message ?? 'Transaction failed';
+    setTxError(msg.length > 120 ? msg.slice(0, 120) + '…' : msg);
+    const t = setTimeout(() => setTxError(null), 7000);
+    return () => clearTimeout(t);
+  }, [applyError]);
+  useEffect(() => {
+    if (applySuccess) { setTxSuccess('Arms trade license application submitted — pending compliance review'); }
+    else if (checkSuccess) { setTxSuccess('Sanctions check recorded on-chain — entity screened successfully'); }
+    else return;
+    const t = setTimeout(() => setTxSuccess(null), 5000);
+    return () => clearTimeout(t);
+  }, [applySuccess, checkSuccess]);
+
   const handleApply = () => {
     if (!importer || !exporterCountry || !importerCountry || !quantity || !value) return;
     applyForLicense(
@@ -78,6 +96,7 @@ export default function ArmsComplianceDashboard() {
     performSanctionsCheck(sanctionEntity as `0x${string}`, sanctionName, sanctionCountry);
   };
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const license = licenseData as any;
 
   const TABS: { id: Tab; label: string }[] = [
@@ -98,30 +117,35 @@ export default function ArmsComplianceDashboard() {
 
   return (
     <div className="space-y-6">
-      <div className="glass rounded-xl p-6">
-        <h2 className="text-2xl font-bold text-white mb-1">Arms Trade Compliance</h2>
-        <p className="text-gray-400">
-          UN-compliant arms export/import licensing, sanctions screening, and dual-use goods management
-        </p>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="glass rounded-xl p-5">
-          <p className="text-sm text-gray-400 mb-1">Total Licenses</p>
-          <p className="text-3xl font-bold text-white">{licenseCount?.toString() ?? '—'}</p>
-          <p className="text-xs text-blue-400 mt-1">All applications</p>
+      {txError && (
+        <div className="flex items-start gap-3 px-4 py-3 bg-red-900/40 border border-red-500/40 rounded-xl text-sm">
+          <span className="text-red-400 shrink-0 mt-0.5">✕</span>
+          <div className="flex-1"><p className="font-semibold text-red-300">Transaction failed</p><p className="text-red-400/80 text-xs mt-0.5">{txError}</p></div>
+          <button onClick={() => setTxError(null)} className="text-red-500 hover:text-red-300 text-xs shrink-0">dismiss</button>
         </div>
-        <div className="glass rounded-xl p-5">
-          <p className="text-sm text-gray-400 mb-1">Total Trade Value</p>
-          <p className="text-3xl font-bold text-white">
-            {totalTradeValue ? `${parseFloat(formatEther(totalTradeValue as bigint)).toLocaleString()} ETH` : '—'}
-          </p>
-          <p className="text-xs text-green-400 mt-1">Verified trades</p>
+      )}
+      {txSuccess && (
+        <div className="flex items-center gap-2 px-4 py-3 bg-green-900/30 border border-green-500/30 rounded-xl text-sm">
+          <span className="text-green-400">✓</span><p className="text-green-300 font-semibold">{txSuccess}</p>
         </div>
-        <div className="glass rounded-xl p-5">
-          <p className="text-sm text-gray-400 mb-1">My Licenses</p>
-          <p className="text-3xl font-bold text-white">{myLicenseIds?.length ?? '—'}</p>
-          <p className="text-xs text-purple-400 mt-1">As exporter</p>
+      )}
+      <div className="bg-gradient-to-r from-red-900/40 to-rose-900/40 border border-red-700/50 rounded-xl p-6 space-y-4">
+        <div>
+          <h2 className="text-2xl font-bold text-white">Arms Trade Compliance</h2>
+          <p className="text-gray-400 mt-1 text-sm">UN-compliant arms export/import licensing · Wassenaar Arrangement · ATT compliance · Real-time sanctions screening · Dual-use goods management</p>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {[
+            { label: 'Total Licenses', value: licenseCount?.toString() ?? '0' },
+            { label: 'Trade Value (ETH)', value: totalTradeValue ? parseFloat(formatEther(totalTradeValue as bigint)).toLocaleString() : '0' },
+            { label: 'My Licenses', value: String(myLicenseIds?.length ?? 0) },
+            { label: 'Commodity Types', value: String(COMMODITY_TYPES.length) },
+          ].map(s => (
+            <div key={s.label} className="bg-white/5 border border-white/10 rounded-lg p-3 text-center">
+              <div className="text-white font-bold text-lg">{s.value}</div>
+              <div className="text-gray-400 text-xs mt-0.5">{s.label}</div>
+            </div>
+          ))}
         </div>
       </div>
 
@@ -291,11 +315,6 @@ export default function ArmsComplianceDashboard() {
                 {applying || applyConfirming ? 'Submitting Application...' : applySuccess ? 'Application Submitted!' : 'Submit License Application'}
               </button>
 
-              {applyError && (
-                <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg p-3">
-                  {applyError.message}
-                </p>
-              )}
             </div>
           )}
 
@@ -344,14 +363,6 @@ export default function ArmsComplianceDashboard() {
                 {checking || checkConfirming ? 'Screening...' : checkSuccess ? 'Check Complete' : 'Run Sanctions Check'}
               </button>
 
-              {checkSuccess && (
-                <div className="flex items-center gap-2 text-green-400 text-sm p-3 bg-green-500/10 border border-green-500/20 rounded-lg">
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                  Sanctions check recorded on-chain.
-                </div>
-              )}
             </div>
           )}
 

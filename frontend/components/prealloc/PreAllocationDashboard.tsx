@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAccount } from 'wagmi';
 import { formatEther } from 'viem';
 import {
@@ -27,11 +27,32 @@ export default function PreAllocationDashboard() {
   const { data: valSchedule } = usePreAllocValidatorSchedule();
   const { data: shrSchedule } = usePreAllocShareholderSchedule();
   const [country, setCountry] = useState('');
-  const { registerAsValidator, isPending: regVPending, isSuccess: regVDone } = usePreAllocRegisterAsValidator();
-  const { registerAsShareholder, isPending: regSPending, isSuccess: regSDone } = usePreAllocRegisterAsShareholder();
-  const { claimSignupBonus, isPending: claimingBonus, isSuccess: bonusClaimed } = usePreAllocClaimSignupBonus();
-  const { claimMonthlyAllocation, isPending: claimingMonthly, isSuccess: monthlyClaimed } = usePreAllocClaimMonthly();
-  const { exitEarly, isPending: exiting } = usePreAllocExitEarly();
+  const { registerAsValidator, isPending: regVPending, isSuccess: regVDone, error: regVErr } = usePreAllocRegisterAsValidator();
+  const { registerAsShareholder, isPending: regSPending, isSuccess: regSDone, error: regSErr } = usePreAllocRegisterAsShareholder();
+  const { claimSignupBonus, isPending: claimingBonus, isSuccess: bonusClaimed, error: bonusErr } = usePreAllocClaimSignupBonus();
+  const { claimMonthlyAllocation, isPending: claimingMonthly, isSuccess: monthlyClaimed, error: monthlyErr } = usePreAllocClaimMonthly();
+  const { exitEarly, isPending: exiting, isSuccess: exitDone, error: exitErr } = usePreAllocExitEarly();
+
+  const [txError, setTxError] = useState<string | null>(null);
+  const [txSuccess, setTxSuccess] = useState<string | null>(null);
+  useEffect(() => {
+    const err = regVErr ?? regSErr ?? bonusErr ?? monthlyErr ?? exitErr;
+    if (!err) return;
+    const msg = (err as {shortMessage?:string})?.shortMessage ?? (err as {message?:string})?.message ?? 'Transaction failed';
+    setTxError(msg.length > 120 ? msg.slice(0, 120) + '…' : msg);
+    const t = setTimeout(() => setTxError(null), 7000);
+    return () => clearTimeout(t);
+  }, [regVErr, regSErr, bonusErr, monthlyErr, exitErr]);
+  useEffect(() => {
+    if (regVDone) { setTxSuccess('Registered as Validator — 5-month compound schedule begins'); }
+    else if (regSDone) { setTxSuccess('Registered as Shareholder — 8-month compound schedule begins'); }
+    else if (bonusClaimed) { setTxSuccess('Signup bonus claimed — $150,000 OICD credited to your account'); }
+    else if (monthlyClaimed) { setTxSuccess('Monthly allocation claimed successfully'); }
+    else if (exitDone) { setTxSuccess('Exited early — locked OICD forfeited, free balance retained'); }
+    else return;
+    const t = setTimeout(() => setTxSuccess(null), 5000);
+    return () => clearTimeout(t);
+  }, [regVDone, regSDone, bonusClaimed, monthlyClaimed, exitDone]);
 
   const stats = networkStats as readonly [bigint,bigint,bigint,bigint,bigint,bigint,bigint] | undefined;
   const member = memberData as {addr?:string;memberType?:number;status?:number;monthsClaimed?:number;freeOICD?:bigint;lockedOICD?:bigint;totalAllocated?:bigint;signupBonusClaimed?:boolean;exited?:boolean;country?:string} | undefined;
@@ -43,9 +64,36 @@ export default function PreAllocationDashboard() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold text-white">Pre-Allocation System</h2>
-        <p className="text-gray-400 mt-1">Obsidian Capital validator and shareholder compound allocation. Target: 250,000 validators = $343T locked OICD network liquidity pool.</p>
+      {txError && (
+        <div className="flex items-start gap-3 px-4 py-3 bg-red-900/40 border border-red-500/40 rounded-xl text-sm">
+          <span className="text-red-400 shrink-0 mt-0.5">✕</span>
+          <div className="flex-1"><p className="font-semibold text-red-300">Transaction failed</p><p className="text-red-400/80 text-xs mt-0.5">{txError}</p></div>
+          <button onClick={() => setTxError(null)} className="text-red-500 hover:text-red-300 text-xs shrink-0">dismiss</button>
+        </div>
+      )}
+      {txSuccess && (
+        <div className="flex items-center gap-2 px-4 py-3 bg-green-900/30 border border-green-500/30 rounded-xl text-sm">
+          <span className="text-green-400">✓</span><p className="text-green-300 font-semibold">{txSuccess}</p>
+        </div>
+      )}
+      <div className="bg-gradient-to-r from-purple-900/40 to-violet-900/40 border border-purple-700/50 rounded-xl p-6 space-y-4">
+        <div>
+          <h2 className="text-2xl font-bold text-white">Pre-Allocation System</h2>
+          <p className="text-gray-400 mt-1 text-sm">Obsidian Capital compound allocation program. Validator: 5-month 4× schedule ($2M→$512M). Shareholder: 8-month 2× schedule ($2M→$256M). Signup bonus: $150K OICD.</p>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {[
+            { label: 'Validators', value: String(totalValidators??0) },
+            { label: 'Shareholders', value: String(totalShareholders??0) },
+            { label: 'Network Pool (OICD)', value: stats?formatEther(stats[3]).split('.')[0]:'0' },
+            { label: 'Progress', value: progressPct+'%' },
+          ].map(s=>(
+            <div key={s.label} className="bg-white/5 border border-white/10 rounded-lg p-3 text-center">
+              <div className="text-white font-bold text-lg">{s.value}</div>
+              <div className="text-gray-400 text-xs mt-0.5">{s.label}</div>
+            </div>
+          ))}
+        </div>
       </div>
       <div className="flex gap-2 flex-wrap border-b border-white/10 pb-2">
         {TABS.map(t=><button key={t.id} onClick={()=>setTab(t.id)} className={tc(tab===t.id)}>{t.label}</button>)}

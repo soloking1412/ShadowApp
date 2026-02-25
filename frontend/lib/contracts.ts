@@ -34,7 +34,13 @@ export const CONTRACTS = {
   // Phase 4
   DigitalTradeExchange: process.env.NEXT_PUBLIC_DTX_ADDRESS as `0x${string}`,
   DCMMarketCharter: process.env.NEXT_PUBLIC_DCM_CHARTER_ADDRESS as `0x${string}`,
+  // Phase 5 — SGMX Ecosystem
+  SGMToken:  process.env.NEXT_PUBLIC_SGM_TOKEN_ADDRESS  as `0x${string}`,
+  SGMXToken: process.env.NEXT_PUBLIC_SGMX_TOKEN_ADDRESS as `0x${string}`,
 };
+
+export const SGM_TOKEN_ADDRESS  = (process.env.NEXT_PUBLIC_SGM_TOKEN_ADDRESS  || '0x0000000000000000000000000000000000000000') as `0x${string}`;
+export const SGMX_TOKEN_ADDRESS = (process.env.NEXT_PUBLIC_SGMX_TOKEN_ADDRESS || '0x0000000000000000000000000000000000000000') as `0x${string}`;
 
 export const CURRENCIES = {
   USD: 1, EUR: 2, GBP: 3, JPY: 4, CHF: 5, CNY: 6, AUD: 7, CAD: 8, OTD: 9, OICD: 10,

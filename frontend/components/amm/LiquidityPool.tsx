@@ -46,6 +46,7 @@ export function LiquidityPool({ poolId, poolExists = true }: LiquidityPoolProps)
     removeLiquidity(poolId, sharesWei, minAmount0, minAmount1);
   };
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const poolData = pool as any;
 
   if (!poolExists) {
@@ -53,7 +54,7 @@ export function LiquidityPool({ poolId, poolExists = true }: LiquidityPoolProps)
       <div className="p-8 text-center bg-white/5 border border-white/10 rounded-lg">
         <div className="text-4xl mb-3">💧</div>
         <p className="text-gray-300 font-medium mb-1">No pools created yet</p>
-        <p className="text-gray-500 text-sm">Switch to the "+ Create Pool" tab to create the first AMM pool.</p>
+        <p className="text-gray-500 text-sm">Switch to the &quot;+ Create Pool&quot; tab to create the first AMM pool.</p>
       </div>
     );
   }

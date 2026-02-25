@@ -1,5 +1,5 @@
 'use client';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAccount } from 'wagmi';
 import { formatEther } from 'viem';
 import {
@@ -53,9 +53,28 @@ export default function PublicBroker() {
   const { data: lookupBroker, refetch: refetchBroker } = useGetBroker(lookupBrokerId ? BigInt(lookupBrokerId) : 0n);
   const { data: brokerClients, refetch: refetchClients } = useGetBrokerClients(lookupClientsId ? BigInt(lookupClientsId) : 0n);
 
-  const { registerBroker, isPending: registering, isSuccess: registered } = useRegisterBroker();
-  const { onboardClient, isPending: onboarding, isSuccess: onboarded } = useOnboardClient();
-  const { approveBroker, isPending: approving } = useApproveBroker();
+  const { registerBroker, isPending: registering, isSuccess: registered, error: regErr } = useRegisterBroker();
+  const { onboardClient, isPending: onboarding, isSuccess: onboarded, error: onboardErr } = useOnboardClient();
+  const { approveBroker, isPending: approving, isSuccess: approveSuccess, error: approveErr } = useApproveBroker();
+
+  const [txError, setTxError] = useState<string | null>(null);
+  const [txSuccess, setTxSuccess] = useState<string | null>(null);
+  useEffect(() => {
+    const err = regErr ?? onboardErr ?? approveErr;
+    if (!err) return;
+    const msg = (err as {shortMessage?:string})?.shortMessage ?? (err as {message?:string})?.message ?? 'Transaction failed';
+    setTxError(msg.length > 120 ? msg.slice(0, 120) + '…' : msg);
+    const t = setTimeout(() => setTxError(null), 7000);
+    return () => clearTimeout(t);
+  }, [regErr, onboardErr, approveErr]);
+  useEffect(() => {
+    if (registered) { setTxSuccess('Broker registered — pending admin approval'); }
+    else if (onboarded) { setTxSuccess('Client onboarded successfully'); }
+    else if (approveSuccess) { setTxSuccess('Broker approved — status set to Active'); }
+    else return;
+    const t = setTimeout(() => setTxSuccess(null), 5000);
+    return () => clearTimeout(t);
+  }, [registered, onboarded, approveSuccess]);
 
   const handleRegister = () => {
     if (!companyName || !regNumber) return;
@@ -73,9 +92,36 @@ export default function PublicBroker() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold text-white">Public Broker Registry</h2>
-        <p className="text-gray-400 mt-1">On-chain broker onboarding, licensing & compliance tracking</p>
+      {txError && (
+        <div className="flex items-start gap-3 px-4 py-3 bg-red-900/40 border border-red-500/40 rounded-xl text-sm">
+          <span className="text-red-400 shrink-0 mt-0.5">✕</span>
+          <div className="flex-1"><p className="font-semibold text-red-300">Transaction failed</p><p className="text-red-400/80 text-xs mt-0.5">{txError}</p></div>
+          <button onClick={() => setTxError(null)} className="text-red-500 hover:text-red-300 text-xs shrink-0">dismiss</button>
+        </div>
+      )}
+      {txSuccess && (
+        <div className="flex items-center gap-2 px-4 py-3 bg-green-900/30 border border-green-500/30 rounded-xl text-sm">
+          <span className="text-green-400">✓</span><p className="text-green-300 font-semibold">{txSuccess}</p>
+        </div>
+      )}
+      <div className="bg-gradient-to-r from-slate-900/60 to-gray-900/60 border border-slate-700/50 rounded-xl p-6 space-y-4">
+        <div>
+          <h2 className="text-2xl font-bold text-white">Public Broker Registry</h2>
+          <p className="text-gray-400 mt-1 text-sm">On-chain broker onboarding, licensing & compliance tracking. License tiers: Retail · Institutional · Prime · Sovereign. KYC/AML verification required for active status.</p>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {[
+            { label: 'Total Brokers', value: brokerCount?.toString()??'0' },
+            { label: 'Active Brokers', value: activeCount?.toString()??'0' },
+            { label: 'Volume (OICD)', value: totalVol?parseFloat(formatEther(totalVol as bigint)).toFixed(0):'0' },
+            { label: 'License Tiers', value: '4' },
+          ].map(s=>(
+            <div key={s.label} className="bg-white/5 border border-white/10 rounded-lg p-3 text-center">
+              <div className="text-white font-bold text-lg">{s.value}</div>
+              <div className="text-gray-400 text-xs mt-0.5">{s.label}</div>
+            </div>
+          ))}
+        </div>
       </div>
 
       <div className="flex gap-2 border-b border-white/10 pb-2">

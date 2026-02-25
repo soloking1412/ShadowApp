@@ -81,7 +81,7 @@ export function IBANBanking() {
   const { deposit, isPending: isDepositing, isSuccess: depositSuccess } = useDepositToIBAN();
   const { withdraw, isPending: isWithdrawing, isSuccess: withdrawSuccess } = useWithdrawFromIBAN();
   const { transfer, calculateFee, calculateNet, isPending: isTransferring, isSuccess: transferSuccess } = useInterBankTransfer();
-  const { useCredit, isPending: isUsingCredit, isSuccess: useCreditSuccess } = useUseCredit();
+  const { useCredit: creditFn, isPending: isUsingCredit, isSuccess: useCreditSuccess } = useUseCredit();
   const { repayCredit, isPending: isRepaying, isSuccess: repaySuccess } = useRepayCredit();
 
   // Computed values
@@ -438,7 +438,7 @@ export function IBANBanking() {
                 className="bg-slate-900 border-slate-700"
               />
               <Button
-                onClick={() => useCredit(creditAmount)}
+                onClick={() => creditFn(creditAmount)}
                 disabled={isUsingCredit || !creditAmount || parseEther(creditAmount || '0') > availableCredit}
                 className="w-full bg-purple-600 hover:bg-purple-700"
               >

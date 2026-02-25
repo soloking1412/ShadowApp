@@ -113,56 +113,21 @@
         "type": "tuple",
         "internalType": "struct HFTEngine.GLTEParameters",
         "components": [
-          {
-            "name": "W_t",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "chi",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "r_jcp",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "r_cc",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "OICD",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "B_Tirana",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "F_Tadawul",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "sigma_VIX",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "gamma",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "updatedAt",
-            "type": "uint256",
-            "internalType": "uint256"
-          }
+          { "name": "W_t",              "type": "uint256", "internalType": "uint256" },
+          { "name": "chi_in",           "type": "uint256", "internalType": "uint256" },
+          { "name": "r_LIBOR",          "type": "uint256", "internalType": "uint256" },
+          { "name": "r_BSE_Delhi",      "type": "uint256", "internalType": "uint256" },
+          { "name": "r_Bursa_Malaysia", "type": "uint256", "internalType": "uint256" },
+          { "name": "chi_out",          "type": "uint256", "internalType": "uint256" },
+          { "name": "OICD",             "type": "uint256", "internalType": "uint256" },
+          { "name": "B_Bolsaro",        "type": "uint256", "internalType": "uint256" },
+          { "name": "B_Tirana",         "type": "uint256", "internalType": "uint256" },
+          { "name": "F_Tadawul",        "type": "uint256", "internalType": "uint256" },
+          { "name": "sigma_VIX",        "type": "uint256", "internalType": "uint256" },
+          { "name": "derivativeSpread", "type": "uint256", "internalType": "uint256" },
+          { "name": "gamma",            "type": "uint256", "internalType": "uint256" },
+          { "name": "yuan_OICD_peg",    "type": "uint256", "internalType": "uint256" },
+          { "name": "updatedAt",        "type": "uint256", "internalType": "uint256" }
         ]
       }
     ],
@@ -814,46 +779,20 @@
     "type": "function",
     "name": "updateGLTEParameters",
     "inputs": [
-      {
-        "name": "W_t",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "chi",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "r_cc",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "OICD",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "B_Tirana",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "F_Tadawul",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "sigma_VIX",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "gamma",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
+      { "name": "W_t",              "type": "uint256", "internalType": "uint256" },
+      { "name": "chi_in",           "type": "uint256", "internalType": "uint256" },
+      { "name": "chi_out",          "type": "uint256", "internalType": "uint256" },
+      { "name": "r_LIBOR",          "type": "uint256", "internalType": "uint256" },
+      { "name": "r_BSE_Delhi",      "type": "uint256", "internalType": "uint256" },
+      { "name": "r_Bursa_Malaysia", "type": "uint256", "internalType": "uint256" },
+      { "name": "OICD",             "type": "uint256", "internalType": "uint256" },
+      { "name": "B_Bolsaro",        "type": "uint256", "internalType": "uint256" },
+      { "name": "B_Tirana",         "type": "uint256", "internalType": "uint256" },
+      { "name": "F_Tadawul",        "type": "uint256", "internalType": "uint256" },
+      { "name": "sigma_VIX",        "type": "uint256", "internalType": "uint256" },
+      { "name": "derivativeSpread", "type": "uint256", "internalType": "uint256" },
+      { "name": "gamma",            "type": "uint256", "internalType": "uint256" },
+      { "name": "yuan_OICD_peg",    "type": "uint256", "internalType": "uint256" }
     ],
     "outputs": [],
     "stateMutability": "nonpayable"

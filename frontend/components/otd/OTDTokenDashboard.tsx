@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAccount } from 'wagmi';
 import {
   useOTDTotalSupply, useOTDTotalHolders, useOTDTotalVotes,
@@ -21,18 +21,67 @@ export default function OTDTokenDashboard() {
   const [castId,setCastId]=useState(''); const [support,setSupport]=useState(true);
   const [lookupVoteId,setLookupVoteId]=useState('');
   const { data: voteData } = useOTDVote(lookupVoteId ? BigInt(lookupVoteId) : 0n);
-  const { registerAsValidator, isPending: regVPending, isSuccess: regVDone } = useOTDRegisterAsValidator();
-  const { registerAsShareholder, isPending: regSPending, isSuccess: regSDone } = useOTDRegisterAsShareholder();
-  const { createGovernanceVote, isPending: creating } = useOTDCreateGovernanceVote();
-  const { castVote, isPending: casting } = useOTDCastVote();
-  const { executeVote, isPending: executing } = useOTDExecuteVote();
+  const { registerAsValidator, isPending: regVPending, isSuccess: regVDone, error: regVErr } = useOTDRegisterAsValidator();
+  const { registerAsShareholder, isPending: regSPending, isSuccess: regSDone, error: regSErr } = useOTDRegisterAsShareholder();
+  const { createGovernanceVote, isPending: creating, isSuccess: createDone, error: createErr } = useOTDCreateGovernanceVote();
+  const { castVote, isPending: casting, isSuccess: castDone, error: castErr } = useOTDCastVote();
+  const { executeVote, isPending: executing, isSuccess: execDone, error: execErr } = useOTDExecuteVote();
+
+  const [txError, setTxError] = useState<string | null>(null);
+  const [txSuccess, setTxSuccess] = useState<string | null>(null);
+  useEffect(() => {
+    const err = regVErr ?? regSErr ?? createErr ?? castErr ?? execErr;
+    if (!err) return;
+    const msg = (err as {shortMessage?:string})?.shortMessage ?? (err as {message?:string})?.message ?? 'Transaction failed';
+    setTxError(msg.length > 120 ? msg.slice(0, 120) + '…' : msg);
+    const t = setTimeout(() => setTxError(null), 7000);
+    return () => clearTimeout(t);
+  }, [regVErr, regSErr, createErr, castErr, execErr]);
+  useEffect(() => {
+    if (regVDone) { setTxSuccess('Registered as OTD Validator — 5-month compound schedule'); }
+    else if (regSDone) { setTxSuccess('Registered as OTD Shareholder — 8-month compound schedule'); }
+    else if (createDone) { setTxSuccess('Governance vote created successfully'); }
+    else if (castDone) { setTxSuccess('Vote cast (1 person = 1 vote) — thank you for participating'); }
+    else if (execDone) { setTxSuccess('Vote executed — result applied on-chain'); }
+    else return;
+    const t = setTimeout(() => setTxSuccess(null), 5000);
+    return () => clearTimeout(t);
+  }, [regVDone, regSDone, createDone, castDone, execDone]);
+
   const TABS: {id:Tab;label:string}[] = [{id:'overview',label:'Overview'},{id:'register',label:'Register'},{id:'governance',label:'Governance'},{id:'lookup',label:'Lookup'}];
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold text-white">OTD Token</h2>
-        <p className="text-gray-400 mt-1">Market stock of Obsidian Capital / Orion Infrastructure Corporation. Total supply: 500 Octillion OTD. 1-person-1-vote governance.</p>
+      {txError && (
+        <div className="flex items-start gap-3 px-4 py-3 bg-red-900/40 border border-red-500/40 rounded-xl text-sm">
+          <span className="text-red-400 shrink-0 mt-0.5">✕</span>
+          <div className="flex-1"><p className="font-semibold text-red-300">Transaction failed</p><p className="text-red-400/80 text-xs mt-0.5">{txError}</p></div>
+          <button onClick={() => setTxError(null)} className="text-red-500 hover:text-red-300 text-xs shrink-0">dismiss</button>
+        </div>
+      )}
+      {txSuccess && (
+        <div className="flex items-center gap-2 px-4 py-3 bg-green-900/30 border border-green-500/30 rounded-xl text-sm">
+          <span className="text-green-400">✓</span><p className="text-green-300 font-semibold">{txSuccess}</p>
+        </div>
+      )}
+      <div className="bg-gradient-to-r from-violet-900/40 to-purple-900/40 border border-violet-700/50 rounded-xl p-6 space-y-4">
+        <div>
+          <h2 className="text-2xl font-bold text-white">OTD Token — $OTD</h2>
+          <p className="text-gray-400 mt-1 text-sm">Digital stock of the Ozhumanill Distributed Capital Market · 500 Octillion $OTD total supply · Backed by Kratos Smart Chain economic value · 1 vote per person regardless of holdings (no whale voting) · Samuel Global Market Xchange Inc.</p>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {[
+            { label: 'Total Supply', value: '500 Oct.' },
+            { label: 'Holders', value: String(totalHolders??0) },
+            { label: 'Governance Votes', value: String(totalVotes??0) },
+            { label: 'Voting', value: '1-person-1-vote' },
+          ].map(s=>(
+            <div key={s.label} className="bg-white/5 border border-white/10 rounded-lg p-3 text-center">
+              <div className="text-white font-bold text-lg">{s.value}</div>
+              <div className="text-gray-400 text-xs mt-0.5">{s.label}</div>
+            </div>
+          ))}
+        </div>
       </div>
       <div className="flex gap-2 flex-wrap border-b border-white/10 pb-2">
         {TABS.map(t=><button key={t.id} onClick={()=>setTab(t.id)} className={tc(tab===t.id)}>{t.label}</button>)}

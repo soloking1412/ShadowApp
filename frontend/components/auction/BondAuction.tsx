@@ -1,5 +1,5 @@
 'use client';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAccount } from 'wagmi';
 import { formatEther, parseEther } from 'viem';
 const safeEther = (v: string) => { try { return parseEther(v || '0'); } catch { return 0n; } };
@@ -50,11 +50,30 @@ export default function BondAuction() {
   const { data: currentPrice } = useGetCurrentDutchPrice(bidAuctionId ? BigInt(bidAuctionId) : 0n);
   const { data: issuerAuctions } = useGetIssuerAuctions(address);
 
-  const { createDutchAuction, isPending: creatingDutch, isSuccess: dutchCreated } = useCreateDutchAuction();
-  const { createSealedBidAuction, isPending: creatingSealed, isSuccess: sealedCreated } = useCreateSealedBidAuction();
-  const { dutchBid, isPending: bidding } = useDutchBid();
-  const { sealedBid, isPending: sealedBidding } = useSealedBid();
-  const { settleSealedAuction, isPending: settling } = useSettleSealedAuction();
+  const { createDutchAuction, isPending: creatingDutch, isSuccess: dutchCreated, error: dutchErr } = useCreateDutchAuction();
+  const { createSealedBidAuction, isPending: creatingSealed, isSuccess: sealedCreated, error: sealedErr } = useCreateSealedBidAuction();
+  const { dutchBid, isPending: bidding, error: bidErr } = useDutchBid();
+  const { sealedBid, isPending: sealedBidding, error: sealedBidErr } = useSealedBid();
+  const { settleSealedAuction, isPending: settling, error: settleErr } = useSettleSealedAuction();
+
+  const [txError,   setTxError]   = useState<string | null>(null);
+  const [txSuccess, setTxSuccess] = useState<string | null>(null);
+
+  useEffect(() => {
+    const err = dutchErr ?? sealedErr ?? bidErr ?? sealedBidErr ?? settleErr;
+    if (!err) return;
+    const msg = (err as { shortMessage?: string })?.shortMessage ?? err.message ?? 'Transaction failed';
+    setTxError(msg.length > 120 ? msg.slice(0, 120) + '…' : msg);
+    const t = setTimeout(() => setTxError(null), 7000);
+    return () => clearTimeout(t);
+  }, [dutchErr, sealedErr, bidErr, sealedBidErr, settleErr]);
+
+  useEffect(() => {
+    if (!dutchCreated && !sealedCreated) return;
+    setTxSuccess(dutchCreated ? 'Dutch auction created' : 'Sealed bid auction created');
+    const t = setTimeout(() => setTxSuccess(null), 5000);
+    return () => clearTimeout(t);
+  }, [dutchCreated, sealedCreated]);
 
   const handleCreate = () => {
     if (!bondName || !faceValue || !supply) return;
@@ -77,6 +96,18 @@ export default function BondAuction() {
 
   return (
     <div className="space-y-6">
+      {txError && (
+        <div className="flex items-start gap-3 px-4 py-3 bg-red-900/40 border border-red-500/40 rounded-xl text-sm">
+          <span className="text-red-400 shrink-0 mt-0.5">✕</span>
+          <div className="flex-1"><p className="font-semibold text-red-300">Transaction failed</p><p className="text-red-400/80 text-xs mt-0.5">{txError}</p></div>
+          <button onClick={() => setTxError(null)} className="text-red-500 hover:text-red-300 text-xs shrink-0">dismiss</button>
+        </div>
+      )}
+      {txSuccess && (
+        <div className="flex items-center gap-2 px-4 py-3 bg-green-900/30 border border-green-500/30 rounded-xl text-sm">
+          <span className="text-green-400">✓</span><p className="text-green-300 font-semibold">{txSuccess}</p>
+        </div>
+      )}
       <div>
         <h2 className="text-2xl font-bold text-white">Bond Auction House</h2>
         <p className="text-gray-400 mt-1">Dutch & sealed-bid auctions for 2DI sovereign bonds</p>

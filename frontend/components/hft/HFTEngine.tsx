@@ -1,5 +1,5 @@
 'use client';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAccount } from 'wagmi';
 import { formatEther } from 'viem';
 import {
@@ -49,9 +49,28 @@ export default function HFTEngineComponent() {
   const { data: traderOrders } = useGetTraderOrders(address);
   const { data: traderStats } = useGetTraderStats(address);
 
-  const { placeOrder, isPending: placing, isSuccess: placed } = useHFTPlaceOrder();
-  const { cancelOrder, isPending: cancelling } = useHFTCancelOrder();
-  const { emitGLTESignal, isPending: emitting, isSuccess: emitted } = useEmitGLTESignal();
+  const { placeOrder, isPending: placing, isSuccess: placed, error: placeErr } = useHFTPlaceOrder();
+  const { cancelOrder, isPending: cancelling, error: cancelErr } = useHFTCancelOrder();
+  const { emitGLTESignal, isPending: emitting, isSuccess: emitted, error: emitErr } = useEmitGLTESignal();
+
+  const [txError,   setTxError]   = useState<string | null>(null);
+  const [txSuccess, setTxSuccess] = useState<string | null>(null);
+
+  useEffect(() => {
+    const err = placeErr ?? cancelErr ?? emitErr;
+    if (!err) return;
+    const msg = (err as { shortMessage?: string })?.shortMessage ?? err.message ?? 'Transaction failed';
+    setTxError(msg.length > 120 ? msg.slice(0, 120) + '…' : msg);
+    const t = setTimeout(() => setTxError(null), 7000);
+    return () => clearTimeout(t);
+  }, [placeErr, cancelErr, emitErr]);
+
+  useEffect(() => {
+    if (!placed && !emitted) return;
+    setTxSuccess(placed ? 'Order placed successfully' : 'GLTE signal emitted');
+    const t = setTimeout(() => setTxSuccess(null), 5000);
+    return () => clearTimeout(t);
+  }, [placed, emitted]);
 
   const handlePlace = () => {
     if (!quantity) return;
@@ -70,8 +89,10 @@ export default function HFTEngineComponent() {
     timestamp: bigint; L_in: bigint; L_out: bigint; bullish: boolean; strength: bigint;
   } | undefined;
   const params = glteParams as {
-    W_t: bigint; chi: bigint; r_jcp: bigint; r_cc: bigint; OICD: bigint;
-    B_Tirana: bigint; F_Tadawul: bigint; sigma_VIX: bigint; gamma: bigint; updatedAt: bigint;
+    W_t: bigint; chi_in: bigint; r_LIBOR: bigint; r_BSE_Delhi: bigint; r_Bursa_Malaysia: bigint;
+    chi_out: bigint; OICD: bigint; B_Bolsaro: bigint; B_Tirana: bigint;
+    F_Tadawul: bigint; sigma_VIX: bigint; derivativeSpread: bigint;
+    gamma: bigint; yuan_OICD_peg: bigint; updatedAt: bigint;
   } | undefined;
   const stats = traderStats as {
     totalOrders: bigint; filledOrders: bigint; totalVolume: bigint; pnl: bigint; lastActivity: bigint;
@@ -86,6 +107,18 @@ export default function HFTEngineComponent() {
 
   return (
     <div className="space-y-6">
+      {txError && (
+        <div className="flex items-start gap-3 px-4 py-3 bg-red-900/40 border border-red-500/40 rounded-xl text-sm">
+          <span className="text-red-400 shrink-0 mt-0.5">✕</span>
+          <div className="flex-1"><p className="font-semibold text-red-300">Transaction failed</p><p className="text-red-400/80 text-xs mt-0.5">{txError}</p></div>
+          <button onClick={() => setTxError(null)} className="text-red-500 hover:text-red-300 text-xs shrink-0">dismiss</button>
+        </div>
+      )}
+      {txSuccess && (
+        <div className="flex items-center gap-2 px-4 py-3 bg-green-900/30 border border-green-500/30 rounded-xl text-sm">
+          <span className="text-green-400">✓</span><p className="text-green-300 font-semibold">{txSuccess}</p>
+        </div>
+      )}
       <div>
         <h2 className="text-2xl font-bold text-white">HFT Engine</h2>
         <p className="text-gray-400 mt-1">GLTE-based sovereign high-frequency trading engine</p>
@@ -123,9 +156,14 @@ export default function HFTEngineComponent() {
 
           {/* GLTE Formula Display */}
           <div className="bg-white/5 rounded-xl p-5 border border-white/10 space-y-4">
-            <h3 className="font-semibold text-cyan-400">Global Liquidity Transformation Equation</h3>
-            <div className="bg-black/30 rounded-lg p-4 font-mono text-sm text-gray-200">
-              L_out = (W_t / E[L_in]) × (r_cc × OICD) + [B_Tirana + (F_Tadawul × σ_VIX(Oil))] × γ
+            <h3 className="font-semibold text-cyan-400">Global Liquidity Transformation Equation (GLTE)</h3>
+            <div className="bg-black/30 rounded-lg p-4 font-mono text-xs text-gray-200 space-y-2 leading-relaxed">
+              <div className="text-cyan-300 text-xs font-bold mb-1">L_in  (Inflow):</div>
+              <div>= (W_t × χ_in[48,678.46%] × r_LIBOR) + r_BSE_Delhi + r_Bursa_Malaysia</div>
+              <div className="text-cyan-300 text-xs font-bold mt-2 mb-1">L_out (Outflow):</div>
+              <div>= (W_t / E[L_in]) × χ_out[75,834.34%] × (OICD/197) × B_Bolsaro</div>
+              <div className="pl-4">+ [B_Tirana + (F_Tadawul × σ_VIX(Oil+deriv_spread_0.05–0.25bp))] × γ × yuan_peg</div>
+              <div className="text-yellow-400/70 text-xs pt-1">{ '{ 1 Yuan = 1 OICD }  Sources: BSE Delhi · Bursa Malaysia · Brazil Bolsaro · Tirana · Tawadul' }</div>
             </div>
             {glteValues && (
               <div className="grid grid-cols-2 gap-4">
@@ -165,17 +203,31 @@ export default function HFTEngineComponent() {
 
           {/* GLTE Parameters */}
           {params && (
-            <div className="bg-white/5 rounded-xl p-5 border border-white/10">
-              <h3 className="font-semibold text-white mb-3">GLTE Parameters</h3>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-                <div><span className="text-gray-400 block">W_t (Capital)</span><span className="text-white">{parseFloat(formatEther(params.W_t)).toFixed(0)}</span></div>
-                <div><span className="text-gray-400 block">χ (Multiplier)</span><span className="text-white">{parseFloat(formatEther(params.chi)).toFixed(0)}</span></div>
-                <div><span className="text-gray-400 block">r_cc</span><span className="text-white">{parseFloat(formatEther(params.r_cc)).toFixed(4)}</span></div>
-                <div><span className="text-gray-400 block">OICD Basket</span><span className="text-white">{parseFloat(formatEther(params.OICD)).toFixed(0)}</span></div>
-                <div><span className="text-gray-400 block">B_Tirana</span><span className="text-white">{parseFloat(formatEther(params.B_Tirana)).toFixed(0)}</span></div>
-                <div><span className="text-gray-400 block">F_Tadawul</span><span className="text-white">{parseFloat(formatEther(params.F_Tadawul)).toFixed(4)}</span></div>
-                <div><span className="text-gray-400 block">σ_VIX(Oil)</span><span className="text-white">{parseFloat(formatEther(params.sigma_VIX)).toFixed(4)}</span></div>
-                <div><span className="text-gray-400 block">γ (Gamma)</span><span className="text-white">{parseFloat(formatEther(params.gamma)).toFixed(4)}</span></div>
+            <div className="bg-white/5 rounded-xl p-5 border border-white/10 space-y-4">
+              <h3 className="font-semibold text-white">GLTE Parameters</h3>
+              <div>
+                <div className="text-xs text-cyan-400 font-semibold uppercase tracking-wider mb-2">L_in Inputs</div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                  <div><span className="text-gray-400 block text-xs">W_t (Capital)</span><span className="text-white">{parseFloat(formatEther(params.W_t)).toLocaleString()}</span></div>
+                  <div><span className="text-gray-400 block text-xs">χ_in (48,678.46%)</span><span className="text-white">{parseFloat(formatEther(params.chi_in)).toFixed(2)}×</span></div>
+                  <div><span className="text-gray-400 block text-xs">r_LIBOR</span><span className="text-white">{(parseFloat(formatEther(params.r_LIBOR)) * 100).toFixed(2)}%</span></div>
+                  <div><span className="text-gray-400 block text-xs">r_BSE_Delhi</span><span className="text-white">{parseFloat(formatEther(params.r_BSE_Delhi)).toLocaleString()}</span></div>
+                  <div><span className="text-gray-400 block text-xs">r_Bursa_Malaysia</span><span className="text-white">{parseFloat(formatEther(params.r_Bursa_Malaysia)).toLocaleString()}</span></div>
+                </div>
+              </div>
+              <div>
+                <div className="text-xs text-cyan-400 font-semibold uppercase tracking-wider mb-2">L_out Inputs</div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                  <div><span className="text-gray-400 block text-xs">χ_out (75,834.34%)</span><span className="text-white">{parseFloat(formatEther(params.chi_out)).toFixed(2)}×</span></div>
+                  <div><span className="text-gray-400 block text-xs">OICD Basket /197</span><span className="text-white">{parseFloat(formatEther(params.OICD)).toFixed(0)}</span></div>
+                  <div><span className="text-gray-400 block text-xs">B_Bolsaro (Brazil)</span><span className="text-white">{parseFloat(formatEther(params.B_Bolsaro)).toFixed(3)}×</span></div>
+                  <div><span className="text-gray-400 block text-xs">B_Tirana (Bonds)</span><span className="text-white">{parseFloat(formatEther(params.B_Tirana)).toLocaleString()}</span></div>
+                  <div><span className="text-gray-400 block text-xs">F_Tadawul (Float)</span><span className="text-white">{parseFloat(formatEther(params.F_Tadawul)).toFixed(3)}×</span></div>
+                  <div><span className="text-gray-400 block text-xs">σ_VIX(Oil)</span><span className="text-white">{(parseFloat(formatEther(params.sigma_VIX)) * 100).toFixed(1)}%</span></div>
+                  <div><span className="text-gray-400 block text-xs">Deriv. Spread</span><span className="text-white">{(parseFloat(formatEther(params.derivativeSpread)) * 10000).toFixed(4)} bp</span></div>
+                  <div><span className="text-gray-400 block text-xs">γ (Yuan-OICD)</span><span className="text-white">{parseFloat(formatEther(params.gamma)).toFixed(4)}</span></div>
+                  <div><span className="text-gray-400 block text-xs">Yuan/OICD Peg</span><span className="text-white">{parseFloat(formatEther(params.yuan_OICD_peg)).toFixed(4)} ¥=OICD</span></div>
+                </div>
               </div>
             </div>
           )}

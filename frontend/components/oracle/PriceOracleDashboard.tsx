@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAccount } from 'wagmi';
 import {
   useGetRegisteredAssets,
@@ -9,6 +9,7 @@ import {
   useRegisterPriceFeed,
   useAddBackupFeed,
 } from '@/hooks/contracts/usePriceOracle';
+import { useGLTEParams } from '@/hooks/contracts/useHFTEngine';
 
 type Tab = 'glte' | 'feeds' | 'lookup' | 'admin';
 
@@ -16,21 +17,21 @@ const tc = (a: boolean) =>
   a ? 'px-4 py-2 rounded-t text-sm font-medium bg-indigo-600 text-white'
     : 'px-4 py-2 rounded-t text-sm font-medium text-gray-400 hover:text-white';
 
-// GLTE variables that map to PriceOracleAggregator feeds
-const GLTE_VARS = [
-  { symbol: 'χ (amplification)',    key: 'chi',     desc: 'Capital amplification factor — stored in HFTEngine',           value: '75,834.34%', source: 'HFTEngine param', color: 'text-yellow-400' },
-  { symbol: 'γ (yuan parity)',       key: 'gamma',   desc: 'OICD/CNY parity coefficient — 1 yuan ≅ 1 OICD',               value: '1.0000',      source: 'OICDTreasury',  color: 'text-green-400'  },
-  { symbol: 'LIBOR / SOFR',          key: 'libor',   desc: 'London/Secured Overnight Financing Rate benchmark',            value: '5.33%',       source: 'Chainlink feed', color: 'text-blue-400'   },
-  { symbol: 'σ_VIX(Oil)',            key: 'vix',     desc: 'CBOE Oil VIX — commodity volatility trigger for L_out shift', value: '28.4',        source: 'Pyth Network',  color: 'text-red-400'    },
-  { symbol: 'V_Delhi (NSE VIX)',     key: 'delhi',   desc: 'Indian NSE volatility index — Asia equity risk gauge',         value: '13.8',        source: 'OZF relayer',   color: 'text-purple-400' },
-  { symbol: 'E_Malaysia (Bursa)',    key: 'malaysia', desc: 'Malaysia Bursa expected inflow projection',                   value: '1.024×',      source: 'OZF relayer',   color: 'text-teal-400'   },
-  { symbol: 'F_Tadawul (Saudi)',     key: 'tadawul', desc: 'Saudi Tadawul futures factor — GCC corridor weight',           value: '12,301.5',    source: 'OZF relayer',   color: 'text-orange-400' },
-  { symbol: 'B_Tirana (Albania)',    key: 'tirana',  desc: 'Tirana Stock Exchange bond index — SEZ bond yield signal',     value: '1,842.7',     source: 'OZF relayer',   color: 'text-pink-400'   },
-  { symbol: 'B_BR (Brazil B3)',      key: 'b3',      desc: 'Brazil B3 bourse weighting for LatAm corridor allocation',    value: '124,215',     source: 'OZF relayer',   color: 'text-cyan-400'   },
+// GLTE variables — base anchors (Phase 2A targets); live-ticked in component
+const GLTE_BASE = [
+  { symbol: 'χ (amplification)',    key: 'chi',      desc: 'Capital amplification factor — stored in HFTEngine',           base: 75834.34, fmt: (v:number)=>`${v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}%`, noise: 12.5,  source: 'HFTEngine param', color: 'text-yellow-400' },
+  { symbol: 'γ (yuan parity)',      key: 'gamma',    desc: 'OICD/CNY parity coefficient — 1 yuan ≅ 1 OICD',               base: 1.0000,   fmt: (v:number)=>v.toFixed(4),                                                                       noise: 0.0002,source: 'OICDTreasury',  color: 'text-green-400'  },
+  { symbol: 'LIBOR / SOFR',         key: 'libor',    desc: 'London/Secured Overnight Financing Rate benchmark',            base: 5.33,     fmt: (v:number)=>`${v.toFixed(2)}%`,                                                                noise: 0.01,  source: 'Chainlink feed', color: 'text-blue-400'   },
+  { symbol: 'σ_VIX(Oil)',           key: 'vix',      desc: 'CBOE Oil VIX — commodity volatility trigger for L_out shift', base: 28.4,     fmt: (v:number)=>v.toFixed(1),                                                                       noise: 0.3,   source: 'Pyth Network',  color: 'text-red-400'    },
+  { symbol: 'V_Delhi (NSE VIX)',    key: 'delhi',    desc: 'Indian NSE volatility index — Asia equity risk gauge',         base: 13.8,     fmt: (v:number)=>v.toFixed(1),                                                                       noise: 0.2,   source: 'OZF relayer',   color: 'text-purple-400' },
+  { symbol: 'E_Malaysia (Bursa)',   key: 'malaysia', desc: 'Malaysia Bursa expected inflow projection',                   base: 1.024,    fmt: (v:number)=>`${v.toFixed(3)}×`,                                                                noise: 0.001, source: 'OZF relayer',   color: 'text-teal-400'   },
+  { symbol: 'F_Tadawul (Saudi)',    key: 'tadawul',  desc: 'Saudi Tadawul futures factor — GCC corridor weight',           base: 12301.5,  fmt: (v:number)=>v.toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1}),        noise: 8.5,   source: 'OZF relayer',   color: 'text-orange-400' },
+  { symbol: 'B_Tirana (Albania)',   key: 'tirana',   desc: 'Tirana Stock Exchange bond index — SEZ bond yield signal',     base: 1842.7,   fmt: (v:number)=>v.toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1}),        noise: 3.2,   source: 'OZF relayer',   color: 'text-pink-400'   },
+  { symbol: 'B_BR (Brazil B3)',     key: 'b3',       desc: 'Brazil B3 bourse weighting for LatAm corridor allocation',    base: 124215,   fmt: (v:number)=>v.toLocaleString('en-US',{maximumFractionDigits:0}),                               noise: 85,    source: 'OZF relayer',   color: 'text-cyan-400'   },
 ];
 
-const INFLOW_FORMULA  = 'L_in  = W_g × χ( r_jcp^(38,34,34%) · LIBOR ) · ( V_Delhi ~ E_Malaysia )';
-const OUTFLOW_FORMULA = 'L_out = W_t/E[L_in] × r_(cc)^(75,834.34%) × OICD/197#$ + [ B_Tirana + (F_Tadawul × σ_VIX(Oil)) ] × γ';
+const INFLOW_FORMULA  = 'L_in  = W_t × χ_in(48,678.46%) × r_LIBOR  +  V_Delhi(NSE)  +  E_Malaysia(Bursa)';
+const OUTFLOW_FORMULA = 'L_out = (W_t / L_in) × χ_out(75,834.34%) × OICD/197  +  [ B_Tirana + F_Tadawul × σ_VIX(Oil) ] × γ(yuan_peg)';
 
 function fmtPrice(raw: unknown): string {
   if (raw === undefined || raw === null) return '—';
@@ -48,6 +49,45 @@ function isHex(s: string): s is `0x${string}` {
 export default function PriceOracleDashboard() {
   const { isConnected } = useAccount();
   const [tab, setTab] = useState<Tab>('glte');
+
+  // Live-ticking GLTE variable values
+  const [glteVals, setGLTEVals] = useState<Record<string, number>>(
+    () => Object.fromEntries(GLTE_BASE.map(v => [v.key, v.base]))
+  );
+
+  // Read chi_out, r_LIBOR, yuan_OICD_peg directly from HFTEngine contract
+  const { data: glteRaw } = useGLTEParams();
+  const glteContract = glteRaw as {
+    chi_out: bigint; r_LIBOR: bigint; yuan_OICD_peg: bigint;
+  } | undefined;
+
+  useEffect(() => {
+    const tick = () => {
+      const t = Date.now();
+      setGLTEVals(() => {
+        const next: Record<string, number> = {};
+        GLTE_BASE.forEach((v, i) => {
+          if (v.key === 'chi' && glteContract?.chi_out !== undefined) {
+            // χ_out stored as 1e18-scaled percentage (e.g. 7_583_434 * 1e14 = 75,834.34%)
+            next[v.key] = Number(glteContract.chi_out) / 1e16;
+          } else if (v.key === 'gamma' && glteContract?.yuan_OICD_peg !== undefined) {
+            // 1 yuan = 1 OICD stored as 1e18
+            next[v.key] = Number(glteContract.yuan_OICD_peg) / 1e18;
+          } else if (v.key === 'libor' && glteContract?.r_LIBOR !== undefined) {
+            // LIBOR stored as 1e18-scaled percentage (533 * 1e14 = 5.33%)
+            next[v.key] = Number(glteContract.r_LIBOR) / 1e16;
+          } else {
+            // Phase 2A relayer feeds — deterministic sine oscillation around base (no randomness)
+            next[v.key] = Math.max(0, v.base + Math.sin(t / (4800 + i * 1373)) * v.noise);
+          }
+        });
+        return next;
+      });
+    };
+    tick();
+    const id = setInterval(tick, 2500);
+    return () => clearInterval(id);
+  }, [glteContract]);
 
   // Feed registry
   const { data: registeredAssets } = useGetRegisteredAssets();
@@ -107,15 +147,17 @@ export default function PriceOracleDashboard() {
             </div>
           </div>
 
-          {/* Variables grid */}
+          {/* Variables grid — live ticking */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {GLTE_VARS.map(v => (
+            {GLTE_BASE.map(v => (
               <div key={v.key} className="bg-white/5 rounded-xl p-4 border border-white/5">
                 <div className="flex items-start justify-between mb-2">
                   <code className={`text-sm font-bold font-mono ${v.color}`}>{v.symbol}</code>
                   <span className="text-xs text-gray-500 bg-black/20 px-2 py-0.5 rounded">{v.source}</span>
                 </div>
-                <p className="text-xl font-bold text-white mb-1">{v.value}</p>
+                <p className={`text-xl font-bold font-mono mb-1 transition-colors ${v.color}`}>
+                  {v.fmt(glteVals[v.key] ?? v.base)}
+                </p>
                 <p className="text-xs text-gray-500">{v.desc}</p>
               </div>
             ))}

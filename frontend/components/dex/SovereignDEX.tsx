@@ -1,5 +1,5 @@
 'use client';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAccount } from 'wagmi';
 import { formatEther, parseEther } from 'viem';
 const safeEther = (v: string) => { try { return parseEther(v || '0'); } catch { return 0n; } };
@@ -41,10 +41,29 @@ export default function SovereignDEXComponent() {
   const { data: lookupSwap, refetch: refetchLookup } = useGetSwap(lookupId ? BigInt(lookupId) : 0n);
   const { data: userSwaps } = useGetUserSwaps(address);
 
-  const { createSwap, isPending: creating, isConfirming: confirmingCreate, isSuccess: created } = useCreateSwap();
-  const { matchSwap, isPending: matching } = useMatchSwap();
-  const { depositConfirmation, isPending: depositing } = useDepositConfirmation();
-  const { cancelSwap, isPending: cancelling } = useCancelSwap();
+  const { createSwap, isPending: creating, isConfirming: confirmingCreate, isSuccess: created, error: createErr } = useCreateSwap();
+  const { matchSwap, isPending: matching, error: matchErr } = useMatchSwap();
+  const { depositConfirmation, isPending: depositing, error: depositErr } = useDepositConfirmation();
+  const { cancelSwap, isPending: cancelling, error: cancelErr } = useCancelSwap();
+
+  const [txError,   setTxError]   = useState<string | null>(null);
+  const [txSuccess, setTxSuccess] = useState<string | null>(null);
+
+  useEffect(() => {
+    const err = createErr ?? matchErr ?? depositErr ?? cancelErr;
+    if (!err) return;
+    const msg = (err as { shortMessage?: string })?.shortMessage ?? err.message ?? 'Transaction failed';
+    setTxError(msg.length > 120 ? msg.slice(0, 120) + '…' : msg);
+    const t = setTimeout(() => setTxError(null), 7000);
+    return () => clearTimeout(t);
+  }, [createErr, matchErr, depositErr, cancelErr]);
+
+  useEffect(() => {
+    if (!created) return;
+    setTxSuccess('Swap created successfully');
+    const t = setTimeout(() => setTxSuccess(null), 5000);
+    return () => clearTimeout(t);
+  }, [created]);
 
   const handleCreate = () => {
     if (!offerAmt || !requestAmt) return;
@@ -60,6 +79,22 @@ export default function SovereignDEXComponent() {
 
   return (
     <div className="space-y-6">
+      {txError && (
+        <div className="flex items-start gap-3 px-4 py-3 bg-red-900/40 border border-red-500/40 rounded-xl text-sm">
+          <span className="text-red-400 shrink-0 mt-0.5">✕</span>
+          <div className="flex-1">
+            <p className="font-semibold text-red-300">Transaction failed</p>
+            <p className="text-red-400/80 text-xs mt-0.5">{txError}</p>
+          </div>
+          <button onClick={() => setTxError(null)} className="text-red-500 hover:text-red-300 text-xs shrink-0">dismiss</button>
+        </div>
+      )}
+      {txSuccess && (
+        <div className="flex items-center gap-2 px-4 py-3 bg-green-900/30 border border-green-500/30 rounded-xl text-sm">
+          <span className="text-green-400">✓</span>
+          <p className="text-green-300 font-semibold">{txSuccess}</p>
+        </div>
+      )}
       <div>
         <h2 className="text-2xl font-bold text-white">SovereignDEX</h2>
         <p className="text-gray-400 mt-1">Atomic cross-currency peer-to-peer swap engine with DvP settlement</p>
