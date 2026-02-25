@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAccount } from 'wagmi';
 import { formatUnits } from 'viem';
 import {
@@ -21,14 +21,45 @@ export default function ObsidianCapitalDashboard() {
   const { data: mgmtFee } = useManagementFee();
   const { data: perfFee } = usePerformanceFee();
   const { data: investorInfo } = useInvestorInfo(address);
-  const { deposit, isPending: depositing, isSuccess: deposited } = useDepositToFund();
+  const { deposit, isPending: depositing, isSuccess: deposited, error: depositErr } = useDepositToFund();
+
+  const [txError,   setTxError]   = useState<string | null>(null);
+  const [txSuccess, setTxSuccess] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!depositErr) return;
+    const msg = (depositErr as { shortMessage?: string })?.shortMessage ?? depositErr.message ?? 'Transaction failed';
+    setTxError(msg.length > 120 ? msg.slice(0, 120) + '…' : msg);
+    const t = setTimeout(() => setTxError(null), 7000);
+    return () => clearTimeout(t);
+  }, [depositErr]);
+
+  useEffect(() => {
+    if (!deposited) return;
+    setTxSuccess('Deposit confirmed — shares issued');
+    const t = setTimeout(() => setTxSuccess(null), 5000);
+    return () => clearTimeout(t);
+  }, [deposited]);
 
   const notDeployed = !CONTRACTS.ObsidianCapital;
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const info = investorInfo as any;
 
   return (
     <div className="space-y-6">
+      {txError && (
+        <div className="flex items-start gap-3 px-4 py-3 bg-red-900/40 border border-red-500/40 rounded-xl text-sm">
+          <span className="text-red-400 shrink-0 mt-0.5">✕</span>
+          <div className="flex-1"><p className="font-semibold text-red-300">Transaction failed</p><p className="text-red-400/80 text-xs mt-0.5">{txError}</p></div>
+          <button onClick={() => setTxError(null)} className="text-red-500 hover:text-red-300 text-xs shrink-0">dismiss</button>
+        </div>
+      )}
+      {txSuccess && (
+        <div className="flex items-center gap-2 px-4 py-3 bg-green-900/30 border border-green-500/30 rounded-xl text-sm">
+          <span className="text-green-400">✓</span><p className="text-green-300 font-semibold">{txSuccess}</p>
+        </div>
+      )}
       <div className="glass rounded-xl p-6">
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">

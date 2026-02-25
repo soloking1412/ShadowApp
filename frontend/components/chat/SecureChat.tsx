@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useRef } from "react";
+import { useAccount } from "wagmi";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,6 +25,7 @@ interface ChatRoom {
 }
 
 export default function SecureChat() {
+  const { isConnected: walletConnected } = useAccount();
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "1",
@@ -37,7 +39,7 @@ export default function SecureChat() {
 
   const [currentMessage, setCurrentMessage] = useState("");
   const [selectedRoom, setSelectedRoom] = useState<string>("general");
-  const [isConnected, setIsConnected] = useState(false);
+  const isConnected = walletConnected; // connected when wallet is connected
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const rooms: ChatRoom[] = [
@@ -46,11 +48,6 @@ export default function SecureChat() {
     { id: "dao", name: "DAO Governance", members: 523, encrypted: true, category: "dao" },
     { id: "lobby", name: "Public Lobby", members: 892, encrypted: true, category: "public" },
   ];
-
-  useEffect(() => {
-    // Simulate connection
-    setTimeout(() => setIsConnected(true), 1000);
-  }, []);
 
   useEffect(() => {
     scrollToBottom();
@@ -64,7 +61,7 @@ export default function SecureChat() {
     if (!currentMessage.trim()) return;
 
     const newMessage: Message = {
-      id: Date.now().toString(),
+      id: crypto.randomUUID(),
       sender: "You",
       content: currentMessage,
       timestamp: Date.now(),

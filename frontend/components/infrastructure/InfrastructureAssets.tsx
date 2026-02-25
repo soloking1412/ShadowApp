@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAccount } from 'wagmi';
 import { formatEther } from 'viem';
 import {
@@ -59,6 +59,24 @@ export default function InfrastructureAssetsDashboard() {
   const { registerAsset, isPending: registering, isConfirming: registerConfirming, isSuccess: registerSuccess, error: registerError } = useRegisterAsset();
   const { establishCorridor, isPending: establishing, isConfirming: estConfirming, isSuccess: estSuccess, error: estError } = useEstablishCorridor();
 
+  const [txError, setTxError] = useState<string|null>(null);
+  const [txSuccess, setTxSuccess] = useState<string|null>(null);
+  useEffect(() => {
+    const err = registerError ?? estError;
+    if (!err) return;
+    const msg = (err as {shortMessage?:string})?.shortMessage ?? (err as {message?:string})?.message ?? 'Transaction failed';
+    setTxError(msg.length > 120 ? msg.slice(0, 120) + '…' : msg);
+    const t = setTimeout(() => setTxError(null), 7000);
+    return () => clearTimeout(t);
+  }, [registerError, estError]);
+  useEffect(() => {
+    if (registerSuccess) { setTxSuccess('Infrastructure asset registered — logistics node added to network'); }
+    else if (estSuccess) { setTxSuccess('Trade corridor established — route active on global network'); }
+    else return;
+    const t = setTimeout(() => setTxSuccess(null), 5000);
+    return () => clearTimeout(t);
+  }, [registerSuccess, estSuccess]);
+
   const handleRegister = () => {
     if (!assetName || !code || !country) return;
     const corridorList = connectedCorridors
@@ -82,7 +100,9 @@ export default function InfrastructureAssetsDashboard() {
     );
   };
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const asset = assetData as any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const corridor = corridorData as any;
 
   const TABS: { id: Tab; label: string }[] = [
@@ -94,30 +114,35 @@ export default function InfrastructureAssetsDashboard() {
 
   return (
     <div className="space-y-6">
-      <div className="glass rounded-xl p-6">
-        <h2 className="text-2xl font-bold text-white mb-1">Infrastructure Assets Registry</h2>
-        <p className="text-gray-400">
-          Global logistics network — ports, airports, rail terminals, warehouses and trade corridors
-        </p>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="glass rounded-xl p-5">
-          <p className="text-sm text-gray-400 mb-1">Registered Assets</p>
-          <p className="text-3xl font-bold text-white">{assetCount?.toString() ?? '—'}</p>
-          <p className="text-xs text-blue-400 mt-1">Global infrastructure nodes</p>
+      {txError && (
+        <div className="flex items-start gap-3 px-4 py-3 bg-red-900/40 border border-red-500/40 rounded-xl text-sm">
+          <span className="text-red-400 shrink-0 mt-0.5">✕</span>
+          <div className="flex-1"><p className="font-semibold text-red-300">Transaction failed</p><p className="text-red-400/80 text-xs mt-0.5">{txError}</p></div>
+          <button onClick={() => setTxError(null)} className="text-red-500 hover:text-red-300 text-xs shrink-0">dismiss</button>
         </div>
-        <div className="glass rounded-xl p-5">
-          <p className="text-sm text-gray-400 mb-1">Active Corridors</p>
-          <p className="text-3xl font-bold text-white">{corridorCount?.toString() ?? '—'}</p>
-          <p className="text-xs text-green-400 mt-1">Trade route connections</p>
+      )}
+      {txSuccess && (
+        <div className="flex items-center gap-2 px-4 py-3 bg-green-900/30 border border-green-500/30 rounded-xl text-sm">
+          <span className="text-green-400">✓</span><p className="text-green-300 font-semibold">{txSuccess}</p>
         </div>
-        <div className="glass rounded-xl p-5">
-          <p className="text-sm text-gray-400 mb-1">Total Freight Value</p>
-          <p className="text-3xl font-bold text-white">
-            {totalFreightValue ? `${parseFloat(formatEther(totalFreightValue as bigint)).toLocaleString()} ETH` : '—'}
-          </p>
-          <p className="text-xs text-purple-400 mt-1">Goods in transit</p>
+      )}
+      <div className="bg-gradient-to-r from-slate-900/60 to-zinc-900/60 border border-slate-700/50 rounded-xl p-6 space-y-4">
+        <div>
+          <h2 className="text-2xl font-bold text-white">Infrastructure Assets Registry</h2>
+          <p className="text-gray-400 mt-1 text-sm">Global logistics network — ports, airports, rail terminals, warehouses and trade corridors · IATA/LOCODE codes · GPS routing · SEZ integration</p>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {[
+            { label: 'Registered Assets', value: assetCount?.toString() ?? '0' },
+            { label: 'Active Corridors', value: corridorCount?.toString() ?? '0' },
+            { label: 'Freight Value (ETH)', value: totalFreightValue ? parseFloat(formatEther(totalFreightValue as bigint)).toLocaleString() : '0' },
+            { label: 'Asset Types', value: String(ASSET_TYPES.length) },
+          ].map(s => (
+            <div key={s.label} className="bg-white/5 border border-white/10 rounded-lg p-3 text-center">
+              <div className="text-white font-bold text-lg">{s.value}</div>
+              <div className="text-gray-400 text-xs mt-0.5">{s.label}</div>
+            </div>
+          ))}
         </div>
       </div>
 
@@ -276,11 +301,6 @@ export default function InfrastructureAssetsDashboard() {
                 {registering || registerConfirming ? 'Registering...' : registerSuccess ? 'Asset Registered!' : 'Register Asset'}
               </button>
 
-              {registerError && (
-                <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg p-3">
-                  {registerError.message}
-                </p>
-              )}
             </div>
           )}
 
@@ -351,11 +371,6 @@ export default function InfrastructureAssetsDashboard() {
                 {establishing || estConfirming ? 'Establishing...' : estSuccess ? 'Corridor Established!' : 'Establish Corridor'}
               </button>
 
-              {estError && (
-                <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg p-3">
-                  {estError.message}
-                </p>
-              )}
             </div>
           )}
 

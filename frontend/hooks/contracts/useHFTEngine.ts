@@ -105,3 +105,33 @@ export function useEmitGLTESignal() {
 
   return { emitGLTESignal, hash, isPending, isConfirming, isSuccess, error };
 }
+
+export function useUpdateGLTEParameters() {
+  const { writeContract, data: hash, isPending, error } = useWriteContract();
+  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
+
+  const updateParams = (
+    W_t: bigint,
+    chi_in: bigint,
+    chi_out: bigint,
+    r_LIBOR: bigint,
+    r_BSE_Delhi: bigint,
+    r_Bursa_Malaysia: bigint,
+    OICD: bigint,
+    B_Bolsaro: bigint,
+    B_Tirana: bigint,
+    F_Tadawul: bigint,
+    sigma_VIX: bigint,
+    derivativeSpread: bigint,
+    gamma: bigint,
+    yuan_OICD_peg: bigint,
+  ) => writeContract({
+    ...cfg,
+    functionName: 'updateGLTEParameters',
+    args: [W_t, chi_in, chi_out, r_LIBOR, r_BSE_Delhi, r_Bursa_Malaysia,
+           OICD, B_Bolsaro, B_Tirana, F_Tadawul, sigma_VIX, derivativeSpread,
+           gamma, yuan_OICD_peg],
+  });
+
+  return { updateParams, hash, isPending, isConfirming, isSuccess, error };
+}

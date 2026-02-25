@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAccount } from 'wagmi';
 import { formatEther, parseEther } from 'viem';
 const safeEther = (v: string) => { try { return parseEther(v || '0'); } catch { return 0n; } };
@@ -51,6 +51,25 @@ export default function OZFParliamentDashboard() {
   const { voteOnProposal, isPending: voting, isConfirming: voteConfirming, isSuccess: voteSuccess } = useVoteOnParliamentProposal();
   const { assignSeat, isPending: assigning, isConfirming: assignConfirming, isSuccess: assignSuccess } = useAssignSeat();
 
+  const [txError, setTxError] = useState<string|null>(null);
+  const [txSuccess, setTxSuccess] = useState<string|null>(null);
+  useEffect(() => {
+    const err = propError;
+    if (!err) return;
+    const msg = (err as {shortMessage?:string})?.shortMessage ?? (err as {message?:string})?.message ?? 'Transaction failed';
+    setTxError(msg.length > 120 ? msg.slice(0, 120) + '…' : msg);
+    const t = setTimeout(() => setTxError(null), 7000);
+    return () => clearTimeout(t);
+  }, [propError]);
+  useEffect(() => {
+    if (propSuccess) { setTxSuccess('Parliamentary proposal submitted — awaiting chamber vote'); }
+    else if (voteSuccess) { setTxSuccess('Vote cast on-chain — parliamentary record updated'); }
+    else if (assignSuccess) { setTxSuccess('Seat assigned — delegation registered in parliament'); }
+    else return;
+    const t = setTimeout(() => setTxSuccess(null), 5000);
+    return () => clearTimeout(t);
+  }, [propSuccess, voteSuccess, assignSuccess]);
+
   const handlePropose = () => {
     if (!propTitle) return;
     createProposal(
@@ -73,6 +92,7 @@ export default function OZFParliamentDashboard() {
     assignSeat(safeBig(assignSeatNum), assignHolder as `0x${string}`, delegationName, tradeBlockName, assignJurisdiction);
   };
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const seat = seatData as any;
   const chairAddr = chairman as string | undefined;
 
@@ -94,40 +114,43 @@ export default function OZFParliamentDashboard() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="glass rounded-xl p-6">
+      {txError && (
+        <div className="flex items-start gap-3 px-4 py-3 bg-red-900/40 border border-red-500/40 rounded-xl text-sm">
+          <span className="text-red-400 shrink-0 mt-0.5">✕</span>
+          <div className="flex-1"><p className="font-semibold text-red-300">Transaction failed</p><p className="text-red-400/80 text-xs mt-0.5">{txError}</p></div>
+          <button onClick={() => setTxError(null)} className="text-red-500 hover:text-red-300 text-xs shrink-0">dismiss</button>
+        </div>
+      )}
+      {txSuccess && (
+        <div className="flex items-center gap-2 px-4 py-3 bg-green-900/30 border border-green-500/30 rounded-xl text-sm">
+          <span className="text-green-400">✓</span><p className="text-green-300 font-semibold">{txSuccess}</p>
+        </div>
+      )}
+      <div className="bg-gradient-to-r from-amber-900/40 to-yellow-900/40 border border-amber-700/50 rounded-xl p-6 space-y-4">
         <div className="flex items-start justify-between">
           <div>
-            <h2 className="text-2xl font-bold text-white mb-1">OZF Parliament</h2>
-            <p className="text-gray-400">Sovereign governance chamber — legislative proposals, trade treaties, and budget allocations</p>
+            <h2 className="text-2xl font-bold text-white">OZF Parliament</h2>
+            <p className="text-gray-400 mt-1 text-sm">Sovereign governance chamber — legislative proposals, trade treaties, and budget allocations · Samuel Global Market Xchange Inc.</p>
           </div>
           {chairAddr && (
-            <div className="text-right">
+            <div className="text-right shrink-0 ml-4">
               <p className="text-xs text-gray-400">Chairman</p>
-              <p className="text-sm font-mono text-primary-400">
-                {chairAddr.slice(0, 6)}…{chairAddr.slice(-4)}
-              </p>
+              <p className="text-sm font-mono text-amber-300">{chairAddr.slice(0, 6)}…{chairAddr.slice(-4)}</p>
             </div>
           )}
         </div>
-      </div>
-
-      {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="glass rounded-xl p-5">
-          <p className="text-sm text-gray-400 mb-1">Active Seats</p>
-          <p className="text-3xl font-bold text-white">{activeSeats?.toString() ?? '—'}</p>
-          <p className="text-xs text-blue-400 mt-1">Parliament members</p>
-        </div>
-        <div className="glass rounded-xl p-5">
-          <p className="text-sm text-gray-400 mb-1">Total Proposals</p>
-          <p className="text-3xl font-bold text-white">{proposalCount?.toString() ?? '—'}</p>
-          <p className="text-xs text-green-400 mt-1">Across all types</p>
-        </div>
-        <div className="glass rounded-xl p-5">
-          <p className="text-sm text-gray-400 mb-1">Proposal Types</p>
-          <p className="text-3xl font-bold text-white">{PROPOSAL_TYPES.length}</p>
-          <p className="text-xs text-purple-400 mt-1">Legislative categories</p>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {[
+            { label: 'Active Seats', value: activeSeats?.toString() ?? '0' },
+            { label: 'Total Proposals', value: proposalCount?.toString() ?? '0' },
+            { label: 'Proposal Types', value: String(PROPOSAL_TYPES.length) },
+            { label: 'Governance', value: 'On-Chain' },
+          ].map(s => (
+            <div key={s.label} className="bg-white/5 border border-white/10 rounded-lg p-3 text-center">
+              <div className="text-white font-bold text-lg">{s.value}</div>
+              <div className="text-gray-400 text-xs mt-0.5">{s.label}</div>
+            </div>
+          ))}
         </div>
       </div>
 
@@ -250,11 +273,6 @@ export default function OZFParliamentDashboard() {
                 {proposing || propConfirming ? 'Submitting...' : propSuccess ? 'Proposal Submitted!' : 'Submit Proposal'}
               </button>
 
-              {propError && (
-                <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg p-3">
-                  {propError.message}
-                </p>
-              )}
             </div>
           )}
 
@@ -309,14 +327,6 @@ export default function OZFParliamentDashboard() {
                 {voting || voteConfirming ? 'Casting Vote...' : voteSuccess ? 'Vote Cast!' : 'Cast Vote'}
               </button>
 
-              {voteSuccess && (
-                <div className="flex items-center gap-2 text-green-400 text-sm p-3 bg-green-500/10 border border-green-500/20 rounded-lg">
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                  Vote recorded on-chain.
-                </div>
-              )}
             </div>
           )}
 

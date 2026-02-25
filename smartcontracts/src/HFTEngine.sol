@@ -8,17 +8,20 @@ import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol
 
 /// @title HFTEngine — High-Frequency Trading engine based on the GLTE formula
 /// @notice Implements the Global Liquidity Transformation Equation (GLTE):
-///         L_out = (W_t / E[L_in]) × (r_cc × OICD) + [B_Tirana + (F_Tadawul × σ_VIX(Oil))] × γ
 ///
-///         Where:
-///         W_t         = Weighted global capital allocation
-///         E[L_in]     = Expected liquidity inflow (chi * rate)
-///         r_cc        = Cross-currency rate
-///         OICD        = OICD liquidity basket value
-///         B_Tirana    = Tirana Exchange base liquidity
-///         F_Tadawul   = Tadawul FX factor
-///         σ_VIX(Oil)  = VIX-adjusted oil volatility
-///         γ           = Global gamma multiplier (risk coefficient)
+///         L_in  = (W_t × χ_in × r_LIBOR) + r_BSE_Delhi + r_Bursa_Malaysia
+///
+///         L_out = (W_t / E[L_in]) × χ_out × (OICD/197) × B_Bolsaro
+///               + [B_Tirana + (F_Tadawul × σ_VIX(Oil) × (1 + spread))] × γ × yuan_peg
+///
+///         Cross-market sources (OICD Models §2):
+///           BSE Delhi, Bursa Malaysia (equities) → L_in
+///           Brazil Bolsaro (commodities), Tirana (bonds), Tawadul (FX float) → L_out
+///
+///         χ_in  = 48,678.46%  (486.7846×)
+///         χ_out = 75,834.34%  (758.3434×)
+///         Derivative spread = 0.05–0.25 bp applied to σ_VIX(Oil)
+///         Yuan peg: 1 Yuan = 1 OICD
 contract HFTEngine is Initializable, UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardUpgradeable {
 
     enum OrderType   { Market, Limit, StopLoss, GLTE }
@@ -26,15 +29,22 @@ contract HFTEngine is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentr
     enum Direction   { Buy, Sell }
 
     struct GLTEParameters {
-        uint256 W_t;          // Weighted capital (1e18 scale)
-        uint256 chi;          // χ — liquidity multiplier (1e18)
-        uint256 r_jcp;        // jcp rate component (1e18)
-        uint256 r_cc;         // cross-currency rate (1e18)
-        uint256 OICD;         // OICD basket value (1e18)
-        uint256 B_Tirana;     // Tirana exchange base (1e18)
-        uint256 F_Tadawul;    // Tadawul FX factor (1e18)
-        uint256 sigma_VIX;    // σ_VIX(Oil) volatility (1e18)
-        uint256 gamma;        // γ risk coefficient (1e18)
+        // ── L_in inputs ────────────────────────────────────────────────────────
+        uint256 W_t;               // Weighted global capital (£/₩/¥ multi-currency, 1e18)
+        uint256 chi_in;            // χ_in — input liquidity multiplier at 48,678.46% (1e18)
+        uint256 r_LIBOR;           // LIBOR reference rate (1e18)
+        uint256 r_BSE_Delhi;       // Delhi Stock Exchange volume rate (1e18)
+        uint256 r_Bursa_Malaysia;  // Bursa Malaysia equity sectors rate (1e18)
+        // ── L_out inputs ───────────────────────────────────────────────────────
+        uint256 chi_out;           // χ_out — output liquidity multiplier at 75,834.34% (1e18)
+        uint256 OICD;              // OICD basket base value (normalised at 197, 1e18)
+        uint256 B_Bolsaro;         // Brazil Bolsaro commodities exchange factor (1e18)
+        uint256 B_Tirana;          // Tirana Stock Exchange bonds factor (1e18)
+        uint256 F_Tadawul;         // Saudi Tawadul float factor (1e18)
+        uint256 sigma_VIX;         // σ_VIX(Oil) volatility (1e18)
+        uint256 derivativeSpread;  // OICD Treasury derivative spread 0.05–0.25 bp (1e18)
+        uint256 gamma;             // γ — yuan-OICD risk coefficient (1e18)
+        uint256 yuan_OICD_peg;     // 1 Yuan = 1 OICD peg rate (1e18 = parity)
         uint256 updatedAt;
     }
 
@@ -105,42 +115,60 @@ contract HFTEngine is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentr
 
         // Set default GLTE parameters (all scaled 1e18)
         glteParams = GLTEParameters({
-            W_t:       1_000_000 * 1e18,  // $1M weighted capital
-            chi:       1_000 * 1e18,       // χ multiplier
-            r_jcp:     38 * 1e16,          // 38% jcp weight
-            r_cc:      1_0 * 1e17,         // 1.0 cross-currency
-            OICD:      197 * 1e18,         // OICD basket
-            B_Tirana:  500_000 * 1e18,     // Tirana base
-            F_Tadawul: 1_2 * 1e17,         // 1.2x Tadawul factor
-            sigma_VIX: 25 * 1e16,          // 25% VIX oil vol
-            gamma:     1_05 * 1e16,        // γ = 1.05
-            updatedAt: block.timestamp
+            // ── L_in inputs ──────────────────────────────────────────────────
+            W_t:               1_000_000 * 1e18,  // $1M weighted global capital
+            chi_in:            4_867_846 * 1e14,  // 486.7846× (48,678.46%)
+            r_LIBOR:           533 * 1e14,         // 5.33% LIBOR reference rate
+            r_BSE_Delhi:       1_000_000 * 1e18,  // BSE Delhi volume component
+            r_Bursa_Malaysia:  800_000 * 1e18,    // Bursa Malaysia equity sectors
+            // ── L_out inputs ─────────────────────────────────────────────────
+            chi_out:           7_583_434 * 1e14,  // 758.3434× (75,834.34%)
+            OICD:              197 * 1e18,         // OICD basket base at 197
+            B_Bolsaro:         1_2 * 1e17,         // 1.2× Brazil Bolsaro commodities
+            B_Tirana:          500_000 * 1e18,     // Tirana Stock Exchange bonds
+            F_Tadawul:         1_2 * 1e17,         // 1.2× Saudi Tawadul float
+            sigma_VIX:         25 * 1e16,          // 25% σ_VIX oil volatility
+            derivativeSpread:  15 * 1e12,          // 0.15 bp OICD Treasury derivative spread
+            gamma:             1_05 * 1e16,        // γ = 1.05 yuan-OICD coefficient
+            yuan_OICD_peg:     1e18,               // 1 Yuan = 1 OICD (parity)
+            updatedAt:         block.timestamp
         });
     }
 
     // ─── GLTE COMPUTATION ─────────────────────────────────────────────────────
 
     /// @notice Computes GLTE output using the sovereign liquidity equation
-    /// @return L_in  Expected inflow
-    /// @return L_out Transformed outflow target
+    /// @return L_in  Expected inflow  = (W_t × χ_in × r_LIBOR) + r_BSE_Delhi + r_Bursa_Malaysia
+    /// @return L_out Transformed outflow = (W_t/L_in) × χ_out × (OICD/197) × B_Bolsaro
+    ///                                   + [B_Tirana + F_Tadawul × σ_VIX × (1+spread)] × γ × yuan_peg
     function computeGLTE() public view returns (uint256 L_in, uint256 L_out) {
         GLTEParameters memory p = glteParams;
 
-        // L_in = W_g × χ(r_jcp) — simplified: W_t × chi × r_jcp / 1e18
-        L_in = (p.W_t * p.chi / 1e18) * p.r_jcp / 1e18;
+        // ── L_in ─────────────────────────────────────────────────────────────
+        // W_t × χ_in × r_LIBOR  (LIBOR-weighted capital inflow)
+        uint256 libor_term = (p.W_t * p.chi_in / 1e18) * p.r_LIBOR / 1e18;
+        // Add BSE Delhi + Bursa Malaysia equity sector volumes
+        L_in = libor_term + p.r_BSE_Delhi + p.r_Bursa_Malaysia;
 
-        // r_cc × OICD
-        uint256 rccOICD = p.r_cc * p.OICD / 1e18;
+        // ── L_out components ─────────────────────────────────────────────────
+        // OICD normalised at 197: OICD / 197 → 1e18 at base value
+        uint256 oicd_norm = p.OICD / 197;
 
-        // F_Tadawul × σ_VIX(Oil)
-        uint256 tadawulVIX = p.F_Tadawul * p.sigma_VIX / 1e18;
+        // σ_VIX adjusted for OICD Treasury derivative spread: σ_VIX × (1 + spread)
+        uint256 vix_spread = p.sigma_VIX * (1e18 + p.derivativeSpread) / 1e18;
 
-        // [B_Tirana + (F_Tadawul × σ_VIX(Oil))]
-        uint256 bracket = p.B_Tirana + tadawulVIX;
+        // χ_out × (OICD/197) × B_Bolsaro
+        uint256 out_factor = (p.chi_out * oicd_norm / 1e18) * p.B_Bolsaro / 1e18;
 
-        // L_out = (W_t / E[L_in]) × rccOICD + bracket × γ
+        // W_t / E[L_in]
         uint256 W_over_Lin = L_in > 0 ? (p.W_t * 1e18 / L_in) : 1e18;
-        L_out = (W_over_Lin * rccOICD / 1e18) + (bracket * p.gamma / 1e18);
+
+        // [B_Tirana + F_Tadawul × σ_VIX_spread]
+        uint256 bracket = p.B_Tirana + (p.F_Tadawul * vix_spread / 1e18);
+
+        // L_out = (W_t/L_in × χ_out × OICD_norm × B_Bolsaro) + bracket × γ × yuan_peg
+        L_out = (W_over_Lin * out_factor / 1e18)
+              + ((bracket * p.gamma / 1e18) * p.yuan_OICD_peg / 1e18);
     }
 
     // ─── EMIT SIGNAL ──────────────────────────────────────────────────────────
@@ -258,22 +286,34 @@ contract HFTEngine is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentr
 
     function updateGLTEParameters(
         uint256 W_t,
-        uint256 chi,
-        uint256 r_cc,
+        uint256 chi_in,
+        uint256 chi_out,
+        uint256 r_LIBOR,
+        uint256 r_BSE_Delhi,
+        uint256 r_Bursa_Malaysia,
         uint256 OICD,
+        uint256 B_Bolsaro,
         uint256 B_Tirana,
         uint256 F_Tadawul,
         uint256 sigma_VIX,
-        uint256 gamma
+        uint256 derivativeSpread,
+        uint256 gamma,
+        uint256 yuan_OICD_peg
     ) external onlyOwner {
         glteParams.W_t = W_t;
-        glteParams.chi = chi;
-        glteParams.r_cc = r_cc;
+        glteParams.chi_in = chi_in;
+        glteParams.chi_out = chi_out;
+        glteParams.r_LIBOR = r_LIBOR;
+        glteParams.r_BSE_Delhi = r_BSE_Delhi;
+        glteParams.r_Bursa_Malaysia = r_Bursa_Malaysia;
         glteParams.OICD = OICD;
+        glteParams.B_Bolsaro = B_Bolsaro;
         glteParams.B_Tirana = B_Tirana;
         glteParams.F_Tadawul = F_Tadawul;
         glteParams.sigma_VIX = sigma_VIX;
+        glteParams.derivativeSpread = derivativeSpread;
         glteParams.gamma = gamma;
+        glteParams.yuan_OICD_peg = yuan_OICD_peg;
         glteParams.updatedAt = block.timestamp;
 
         emit GLTEParametersUpdated(W_t, gamma, block.timestamp);

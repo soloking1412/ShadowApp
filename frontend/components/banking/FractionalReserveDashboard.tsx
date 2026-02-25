@@ -43,7 +43,7 @@ export default function FractionalReserveDashboard() {
   const { deposit, isPending: depPending, isConfirming: depConfirming, isSuccess: depSuccess, error: depError } = useDepositToIBAN();
   const { withdraw, isPending: wdPending, isConfirming: wdConfirming, isSuccess: wdSuccess, error: wdError } = useWithdrawFromIBAN();
   const { transfer, calculateFee, calculateNet, isPending: trPending, isConfirming: trConfirming, isSuccess: trSuccess, error: trError } = useInterBankTransfer();
-  const { useCredit, isPending: crPending, isConfirming: crConfirming, isSuccess: crSuccess, error: crError } = useUseCredit();
+  const { useCredit: creditFn, isPending: crPending, isConfirming: crConfirming, isSuccess: crSuccess, error: crError } = useUseCredit();
   const { repayCredit, isPending: rpPending, isConfirming: rpConfirming, isSuccess: rpSuccess, error: rpError } = useRepayCredit();
 
   // Form state
@@ -350,7 +350,7 @@ export default function FractionalReserveDashboard() {
               {crError && <p className="text-red-400 text-sm">{(crError as Error).message.slice(0, 150)}</p>}
               {crSuccess && <p className="text-green-400 text-sm">✓ Credit used!</p>}
               <button
-                onClick={() => useCredit(creditAmt)}
+                onClick={() => creditFn(creditAmt)}
                 disabled={crPending || crConfirming || !address || !safeParseEther(creditAmt) || notDeployed || !hasIBAN}
                 className="w-full py-4 bg-purple-500 hover:bg-purple-600 text-white font-bold rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
