@@ -27,6 +27,7 @@ export default function LiquidityServiceDashboard() {
   const { withdrawLiquidity, isPending: withdrawing } = useWithdrawLiquidity();
 
   const notDeployed = !CONTRACTS.LiquidityAsAService;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const pool = viewPool as any;
 
   return (

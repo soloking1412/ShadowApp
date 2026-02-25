@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
 import { CONTRACTS, CURRENCY_NAMES } from '@/lib/contracts';
 import { formatEther, parseEther, formatUnits } from 'viem';
@@ -12,8 +12,18 @@ export default function TreasuryDashboard() {
   const [mintAmount, setMintAmount] = useState('');
   const [recipient, setRecipient] = useState('');
 
-  const { writeContract, data: hash } = useWriteContract();
+  const { writeContract, data: hash, error: writeError } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
+  const [txError, setTxError] = useState<string | null>(null);
+  const [showCastCmd, setShowCastCmd] = useState(false);
+
+  useEffect(() => {
+    if (!writeError) return;
+    const msg = (writeError as { shortMessage?: string })?.shortMessage ?? writeError.message ?? 'Mint failed';
+    setTxError(msg.length > 120 ? msg.slice(0, 120) + '…' : msg);
+    const t = setTimeout(() => setTxError(null), 7000);
+    return () => clearTimeout(t);
+  }, [writeError]);
 
   // Read currency data from contract
   const { data: currencyData } = useReadContract({
@@ -35,16 +45,12 @@ export default function TreasuryDashboard() {
   const handleMint = async () => {
     if (!recipient || !mintAmount) return;
 
-    try {
-      writeContract({
-        address: CONTRACTS.OICDTreasury,
-        abi: OICDTreasuryABI,
-        functionName: 'mint',
-        args: [recipient as `0x${string}`, BigInt(selectedCurrency), parseEther(mintAmount), '0x'],
-      });
-    } catch (error) {
-      console.error('Error minting:', error);
-    }
+    writeContract({
+      address: CONTRACTS.OICDTreasury,
+      abi: OICDTreasuryABI,
+      functionName: 'mint',
+      args: [recipient as `0x${string}`, BigInt(selectedCurrency), parseEther(mintAmount), '0x'],
+    });
   };
 
   const currencies = Object.entries(CURRENCY_NAMES);
@@ -70,6 +76,18 @@ export default function TreasuryDashboard() {
 
   return (
     <div className="space-y-6">
+      {txError && (
+        <div className="flex items-start gap-3 px-4 py-3 bg-red-900/40 border border-red-500/40 rounded-xl text-sm">
+          <span className="text-red-400 shrink-0 mt-0.5">✕</span>
+          <div className="flex-1"><p className="font-semibold text-red-300">Mint failed</p><p className="text-red-400/80 text-xs mt-0.5">{txError}</p></div>
+          <button onClick={() => setTxError(null)} className="text-red-500 hover:text-red-300 text-xs shrink-0">dismiss</button>
+        </div>
+      )}
+      {isSuccess && (
+        <div className="flex items-center gap-2 px-4 py-3 bg-green-900/30 border border-green-500/30 rounded-xl text-sm">
+          <span className="text-green-400">✓</span><p className="text-green-300 font-semibold">Mint transaction confirmed</p>
+        </div>
+      )}
       <div className="glass rounded-xl p-6">
         <h2 className="text-2xl font-bold text-white mb-2">OICD Treasury</h2>
         <p className="text-gray-400 mb-6">Manage global currency reserves and minting operations</p>
@@ -153,7 +171,76 @@ export default function TreasuryDashboard() {
               <p className="text-sm text-green-400">Tokens minted successfully!</p>
             </div>
           )}
+
+          {/* MetaMask native token warning explainer */}
+          <div className="p-4 bg-yellow-900/20 border border-yellow-500/30 rounded-lg">
+            <p className="text-xs font-semibold text-yellow-400 mb-1">ℹ MetaMask &quot;Unexpected native token symbol&quot; warning</p>
+            <p className="text-xs text-yellow-300/70">
+              This is a MetaMask safety notice for local chain 31337, not an error.
+              The native token IS Ether (ETH). Click <strong className="text-yellow-300">&quot;I understand, continue&quot;</strong> in the MetaMask popup to proceed normally.
+              It will not affect your transaction.
+            </p>
+          </div>
+
+          {/* Quick-fill presets */}
+          <div className="border-t border-white/10 pt-4">
+            <p className="text-xs font-semibold text-gray-400 mb-2 uppercase tracking-wide">Quick Fill</p>
+            <div className="flex flex-wrap gap-2">
+              {[
+                { label: '25M OICD → 0x8c96…D9a', addr: '0x8c96540B2dfD9c7077782bDeB052E7a18c267D9a', amt: '25000000', cid: 10 },
+                { label: '25M OTD → 0x8c96…D9a',  addr: '0x8c96540B2dfD9c7077782bDeB052E7a18c267D9a', amt: '25000000', cid: 9  },
+                { label: '10M USD → 0x8c96…D9a',  addr: '0x8c96540B2dfD9c7077782bDeB052E7a18c267D9a', amt: '10000000', cid: 1  },
+              ].map(p => (
+                <button key={p.label} onClick={() => { setRecipient(p.addr); setMintAmount(p.amt); setSelectedCurrency(p.cid); }}
+                  className="text-xs bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 px-3 py-1.5 rounded-lg border border-blue-500/30 transition-all font-mono">
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
+      </div>
+
+      {/* ── Cast / Docker alternative (no MetaMask) ── */}
+      <div className="glass rounded-xl p-5">
+        <button onClick={() => setShowCastCmd(v => !v)}
+          className="flex items-center justify-between w-full text-left">
+          <div>
+            <p className="text-sm font-bold text-white">Terminal Mint (no MetaMask required)</p>
+            <p className="text-xs text-gray-400 mt-0.5">Run directly via Docker — no gas prompts, no wallet popups</p>
+          </div>
+          <span className="text-gray-400 text-lg">{showCastCmd ? '▲' : '▼'}</span>
+        </button>
+
+        {showCastCmd && (
+          <div className="mt-4 space-y-3">
+            <p className="text-xs text-gray-400">
+              Mint <strong className="text-white">25,000,000 OICD</strong> (currency ID 10) to{' '}
+              <code className="text-blue-400">0x8c96540B2dfD9c7077782bDeB052E7a18c267D9a</code>:
+            </p>
+
+            <pre className="text-[11px] text-green-300 font-mono bg-black/40 rounded-lg px-4 py-3 overflow-x-auto leading-relaxed whitespace-pre">{`docker compose exec anvil cast send \\
+  $OICD_TREASURY \\
+  "mint(address,uint256,uint256,bytes)" \\
+  0x8c96540B2dfD9c7077782bDeB052E7a18c267D9a \\
+  10 \\
+  25000000000000000000000000 \\
+  "0x" \\
+  --rpc-url http://localhost:8545 \\
+  --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80`}</pre>
+
+            <p className="text-xs text-gray-500">
+              Or use the shell script at project root:{' '}
+              <code className="bg-white/5 px-1 rounded">bash scripts/mint-tokens.sh</code>
+            </p>
+
+            <div className="p-3 bg-amber-900/20 border border-amber-500/20 rounded-lg text-xs text-amber-300/80">
+              Replace <code className="bg-black/30 px-1 rounded">$OICD_TREASURY</code> with the actual address from your <code className="bg-black/30 px-1 rounded">.env.local</code> file
+              (<code className="bg-black/30 px-1 rounded">NEXT_PUBLIC_OICD_TREASURY_ADDRESS</code>).
+              The private key above is Anvil account 0 (pre-funded with 10,000 test ETH).
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="glass rounded-xl p-6">

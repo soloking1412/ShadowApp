@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAccount } from 'wagmi';
 import { formatEther, parseEther } from 'viem';
 import {
@@ -46,11 +46,32 @@ export default function JobsBoardDashboard() {
   const [lookupId,setLookupId]=useState('');
   const { data: jobData } = useJobsBoardGetJob(lookupId ? BigInt(lookupId) : 0n);
 
-  const { postJob, isPending: posting, isSuccess: posted } = useJobsBoardPostJob();
-  const { applyForJob, isPending: applying } = useJobsBoardApplyForJob();
-  const { hireWorker: hireWorkerFn, isPending: hiring } = useJobsBoardHireWorker();
-  const { markJobComplete, isPending: completing } = useJobsBoardMarkComplete();
-  const { cancelJob, isPending: cancelling } = useJobsBoardCancelJob();
+  const { postJob, isPending: posting, isSuccess: posted, error: postErr } = useJobsBoardPostJob();
+  const { applyForJob, isPending: applying, isSuccess: applied, error: applyErr } = useJobsBoardApplyForJob();
+  const { hireWorker: hireWorkerFn, isPending: hiring, isSuccess: hired, error: hireErr } = useJobsBoardHireWorker();
+  const { markJobComplete, isPending: completing, isSuccess: completeDone, error: completeErr } = useJobsBoardMarkComplete();
+  const { cancelJob, isPending: cancelling, isSuccess: cancelDone, error: cancelErr } = useJobsBoardCancelJob();
+
+  const [txError, setTxError] = useState<string | null>(null);
+  const [txSuccess, setTxSuccess] = useState<string | null>(null);
+  useEffect(() => {
+    const err = postErr ?? applyErr ?? hireErr ?? completeErr ?? cancelErr;
+    if (!err) return;
+    const msg = (err as {shortMessage?:string})?.shortMessage ?? (err as {message?:string})?.message ?? 'Transaction failed';
+    setTxError(msg.length > 120 ? msg.slice(0, 120) + '…' : msg);
+    const t = setTimeout(() => setTxError(null), 7000);
+    return () => clearTimeout(t);
+  }, [postErr, applyErr, hireErr, completeErr, cancelErr]);
+  useEffect(() => {
+    if (posted) { setTxSuccess('Job posted successfully'); }
+    else if (applied) { setTxSuccess('Application submitted'); }
+    else if (hired) { setTxSuccess('Worker hired — job is now in progress'); }
+    else if (completeDone) { setTxSuccess('Job marked complete — payout released'); }
+    else if (cancelDone) { setTxSuccess('Job cancelled'); }
+    else return;
+    const t = setTimeout(() => setTxSuccess(null), 5000);
+    return () => clearTimeout(t);
+  }, [posted, applied, hired, completeDone, cancelDone]);
 
   const stats = boardStats as readonly [bigint,bigint,bigint,bigint] | undefined;
   const wp = workerProfile as {reputationScore?:number;jobsCompleted?:number;clearance?:number;totalEarnedOICD?:bigint;exists?:boolean} | undefined;
@@ -59,9 +80,36 @@ export default function JobsBoardDashboard() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold text-white">Jobs Board</h2>
-        <p className="text-gray-400 mt-1">OICD Employment Marketplace. 8 job levels from Small (1K OICD) to Echo (stock + recurring revenue %). 5 clearance levels for special contracts.</p>
+      {txError && (
+        <div className="flex items-start gap-3 px-4 py-3 bg-red-900/40 border border-red-500/40 rounded-xl text-sm">
+          <span className="text-red-400 shrink-0 mt-0.5">✕</span>
+          <div className="flex-1"><p className="font-semibold text-red-300">Transaction failed</p><p className="text-red-400/80 text-xs mt-0.5">{txError}</p></div>
+          <button onClick={() => setTxError(null)} className="text-red-500 hover:text-red-300 text-xs shrink-0">dismiss</button>
+        </div>
+      )}
+      {txSuccess && (
+        <div className="flex items-center gap-2 px-4 py-3 bg-green-900/30 border border-green-500/30 rounded-xl text-sm">
+          <span className="text-green-400">✓</span><p className="text-green-300 font-semibold">{txSuccess}</p>
+        </div>
+      )}
+      <div className="bg-gradient-to-r from-amber-900/40 to-orange-900/40 border border-amber-700/50 rounded-xl p-6 space-y-4">
+        <div>
+          <h2 className="text-2xl font-bold text-white">Jobs Board</h2>
+          <p className="text-gray-400 mt-1 text-sm">OICD Employment Marketplace. Standard: Small ($1K–$15K) · Medium ($15K–$35K) · Large ($35K–$70K). Bourse Contracts: Alpha ($100K–$20M OICD) · Bravo ($10M–$16M + OTD stock) · Charlie/Delta (OTD stock grants) · Echo (OTD stock + 3%–10% recurring revenue).</p>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {[
+            { label: 'Total Jobs', value: String(jobCount??0) },
+            { label: 'Completed', value: String(totalCompleted??0) },
+            { label: 'OICD Distributed', value: stats?formatEther(stats[2]).split('.')[0]:'0' },
+            { label: 'Job Levels', value: '8' },
+          ].map(s=>(
+            <div key={s.label} className="bg-white/5 border border-white/10 rounded-lg p-3 text-center">
+              <div className="text-white font-bold text-lg">{s.value}</div>
+              <div className="text-gray-400 text-xs mt-0.5">{s.label}</div>
+            </div>
+          ))}
+        </div>
       </div>
       <div className="flex gap-2 flex-wrap border-b border-white/10 pb-2">
         {TABS.map(t=><button key={t.id} onClick={()=>setTab(t.id)} className={tc(tab===t.id)}>{t.label}</button>)}

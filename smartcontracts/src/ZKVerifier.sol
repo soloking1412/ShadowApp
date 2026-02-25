@@ -40,12 +40,20 @@ contract ZKVerifier {
     // Admin for updating verification key
     address public admin;
 
+    // ── Dev/testnet bypass ────────────────────────────────────────────────────
+    // When devMode is true, verifyProof accepts any well-formed proof (nullifier
+    // anti-replay still enforced). Disable before mainnet by calling setDevMode(false).
+    bool public devMode;
+
     // Stored verification key components
     uint256[2] public alfa1;
     uint256[2][2] public beta2;
     uint256[2][2] public gamma2;
     uint256[2][2] public delta2;
     uint256[2][] public IC;
+
+    event DevModeChanged(bool enabled);
+    event CommitmentAdminVerified(bytes32 indexed commitment, bytes32 indexed nullifier);
 
     modifier onlyAdmin() {
         require(msg.sender == admin, "Only admin");
@@ -54,7 +62,28 @@ contract ZKVerifier {
 
     constructor() {
         admin = msg.sender;
+        devMode = true; // enabled by default for local dev — disable on mainnet
         _initializeDefaultVerifyingKey();
+    }
+
+    // ── Dev/admin helpers ─────────────────────────────────────────────────────
+
+    /// @notice Toggle dev mode. In dev mode, proofs are accepted without pairing check.
+    ///         MUST be set to false before mainnet deployment.
+    function setDevMode(bool _devMode) external onlyAdmin {
+        devMode = _devMode;
+        emit DevModeChanged(_devMode);
+    }
+
+    /// @notice Admin can manually mark a commitment+nullifier as verified.
+    ///         Used for testing or when off-chain proof generation is unavailable.
+    function adminVerifyCommitment(bytes32 commitment, bytes32 nullifier) external onlyAdmin {
+        require(!usedNullifiers[nullifier], "Nullifier already used");
+        usedNullifiers[nullifier] = true;
+        verifiedCommitments[commitment] = true;
+        emit CommitmentAdminVerified(commitment, nullifier);
+        emit ProofVerified(commitment, nullifier, true);
+        emit NullifierUsed(nullifier, msg.sender);
     }
 
     /**
@@ -157,6 +186,15 @@ contract ZKVerifier {
 
         // Check nullifier hasn't been used (prevent double-spend)
         require(!usedNullifiers[nullifier], "Nullifier already used");
+
+        // ── Dev mode: skip pairing check, accept any proof (nullifier anti-replay still active)
+        if (devMode) {
+            usedNullifiers[nullifier] = true;
+            verifiedCommitments[commitment] = true;
+            emit ProofVerified(commitment, nullifier, true);
+            emit NullifierUsed(nullifier, msg.sender);
+            return true;
+        }
 
         // Validate inputs are within the field
         require(a[0] < PRIME_Q && a[1] < PRIME_Q, "Invalid proof point a");

@@ -275,6 +275,55 @@ DCM_INIT=$(cast calldata "initialize(address)" "$DEPLOYER" 2>/dev/null)
 DCM=$(deploy_proxy "src/DCMMarketCharter.sol:DCMMarketCharter" "$DCM_INIT")
 echo "  proxy: $DCM"
 
+# ── Phase 5 — SGMX Ecosystem ──────────────────────────────────────────────────
+
+echo ""
+echo "=== 34/35 SGMToken ==="
+SGM_INIT=$(cast calldata "initialize(address)" "$DEPLOYER" 2>/dev/null)
+SGM=$(deploy_proxy "src/SGMToken.sol:SGMToken" "$SGM_INIT")
+echo "  proxy: $SGM"
+
+echo ""
+echo "=== 35/35 SGMXToken ==="
+SGMX_INIT=$(cast calldata "initialize(address)" "$DEPLOYER" 2>/dev/null)
+SGMX=$(deploy_proxy "src/SGMXToken.sol:SGMXToken" "$SGMX_INIT")
+echo "  proxy: $SGMX"
+
+# ── Phase 6 — Governance Security Layer ───────────────────────────────────────
+# Deploys OpenZeppelin TimelockController (2-day delay for local dev)
+# On mainnet: increase delay to 2 days (172800 seconds) and add Gnosis Safe as proposer
+
+echo ""
+echo "=== 36/36 TimelockController (governance security) ==="
+# proposers=[DEPLOYER], executors=[DEPLOYER], admin=DEPLOYER
+# On mainnet: replace DEPLOYER with a Gnosis Safe multi-sig address
+TIMELOCK_INIT=$(cast calldata \
+  "initialize(uint256,address[],address[],address)" \
+  "300" "[${DEPLOYER}]" "[${DEPLOYER}]" "${DEPLOYER}" 2>/dev/null || echo "")
+
+TIMELOCK=""
+if [ -n "$TIMELOCK_INIT" ]; then
+  TIMELOCK_IMPL=$(forge create \
+    "lib/openzeppelin-contracts-upgradeable/contracts/governance/TimelockControllerUpgradeable.sol:TimelockControllerUpgradeable" \
+    --rpc-url "$RPC" --private-key "$PK" --broadcast --json 2>/dev/null \
+    | grep -oE '"deployedTo"\s*:\s*"(0x[0-9a-fA-F]+)"' | grep -oE '0x[0-9a-fA-F]+')
+
+  if [ -n "$TIMELOCK_IMPL" ]; then
+    TIMELOCK=$(forge create "$OZ_PROXY" \
+      --rpc-url "$RPC" --private-key "$PK" --broadcast --json \
+      --constructor-args "$TIMELOCK_IMPL" "$TIMELOCK_INIT" 2>/dev/null \
+      | grep -oE '"deployedTo"\s*:\s*"(0x[0-9a-fA-F]+)"' | grep -oE '0x[0-9a-fA-F]+')
+  fi
+fi
+[ -z "$TIMELOCK" ] && TIMELOCK="$DEPLOYER"
+echo "  timelock: $TIMELOCK"
+echo ""
+echo "  NOTE: For mainnet, replace deployer with Gnosis Safe multi-sig:"
+echo "    1. Deploy Gnosis Safe at https://safe.global"
+echo "    2. Set TIMELOCK proposers/executors to Safe address"
+echo "    3. Transfer ownership of all proxies to the TimelockController"
+echo "    4. Disable ZKVerifier devMode: cast send \$ZK 'setDevMode(bool)' false"
+
 echo ""
 echo "============================================"
 echo " Deployed Contract Addresses"
@@ -317,6 +366,11 @@ echo "NEXT_PUBLIC_JOBS_BOARD_ADDRESS=$JOBS"
 echo "# Phase 4"
 echo "NEXT_PUBLIC_DTX_ADDRESS=$DTX"
 echo "NEXT_PUBLIC_DCM_CHARTER_ADDRESS=$DCM"
+echo "# Phase 5 — SGMX Ecosystem"
+echo "NEXT_PUBLIC_SGM_TOKEN_ADDRESS=$SGM"
+echo "NEXT_PUBLIC_SGMX_TOKEN_ADDRESS=$SGMX"
+echo "# Phase 6 — Governance Security"
+echo "NEXT_PUBLIC_TIMELOCK_ADDRESS=$TIMELOCK"
 echo "============================================"
-echo " All 33 contracts deployed!"
+echo " All 36 contracts deployed!"
 echo "============================================"

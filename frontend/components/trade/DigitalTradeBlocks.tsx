@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAccount } from 'wagmi';
 import { formatEther, parseEther } from 'viem';
 import {
@@ -58,6 +58,24 @@ export default function DigitalTradeBlocksDashboard() {
   const { createTradeBlock, isPending: creating, isConfirming: createConfirming, isSuccess: createSuccess, error: createError } = useCreateTradeBlock();
   const { offerTradeBlock, isPending: offering, isConfirming: offerConfirming, isSuccess: offerSuccess } = useOfferTradeBlock();
 
+  const [txError, setTxError] = useState<string|null>(null);
+  const [txSuccess, setTxSuccess] = useState<string|null>(null);
+  useEffect(() => {
+    const err = createError;
+    if (!err) return;
+    const msg = (err as {shortMessage?:string})?.shortMessage ?? (err as {message?:string})?.message ?? 'Transaction failed';
+    setTxError(msg.length > 120 ? msg.slice(0, 120) + '…' : msg);
+    const t = setTimeout(() => setTxError(null), 7000);
+    return () => clearTimeout(t);
+  }, [createError]);
+  useEffect(() => {
+    if (createSuccess) { setTxSuccess('Trade block created — NFT instrument minted on-chain'); }
+    else if (offerSuccess) { setTxSuccess('Trade block listed for sale — offer published to market'); }
+    else return;
+    const t = setTimeout(() => setTxSuccess(null), 5000);
+    return () => clearTimeout(t);
+  }, [createSuccess, offerSuccess]);
+
   const handleCreate = () => {
     if (!name || !faceValue) return;
     const maturity = maturityDays
@@ -76,6 +94,7 @@ export default function DigitalTradeBlocksDashboard() {
     offerTradeBlock(BigInt(tokenId), parseEther(offerPrice), BigInt(offerExpiry));
   };
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const block = blockData as any;
 
   const TABS: { id: Tab; label: string }[] = [
@@ -87,28 +106,35 @@ export default function DigitalTradeBlocksDashboard() {
 
   return (
     <div className="space-y-6">
-      <div className="glass rounded-xl p-6">
-        <h2 className="text-2xl font-bold text-white mb-1">2DI Digital Trade Blocks</h2>
-        <p className="text-gray-400">Tokenized trade finance instruments — infrastructure, commodities, energy, and beyond</p>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="glass rounded-xl p-5">
-          <p className="text-sm text-gray-400 mb-1">Total Blocks Issued</p>
-          <p className="text-3xl font-bold text-white">{blockCount?.toString() ?? '—'}</p>
-          <p className="text-xs text-blue-400 mt-1">NFT instruments</p>
+      {txError && (
+        <div className="flex items-start gap-3 px-4 py-3 bg-red-900/40 border border-red-500/40 rounded-xl text-sm">
+          <span className="text-red-400 shrink-0 mt-0.5">✕</span>
+          <div className="flex-1"><p className="font-semibold text-red-300">Transaction failed</p><p className="text-red-400/80 text-xs mt-0.5">{txError}</p></div>
+          <button onClick={() => setTxError(null)} className="text-red-500 hover:text-red-300 text-xs shrink-0">dismiss</button>
         </div>
-        <div className="glass rounded-xl p-5">
-          <p className="text-sm text-gray-400 mb-1">Total Block Value</p>
-          <p className="text-3xl font-bold text-white">
-            {totalValue ? `${parseFloat(formatEther(totalValue as bigint)).toLocaleString()} ETH` : '—'}
-          </p>
-          <p className="text-xs text-green-400 mt-1">Face value total</p>
+      )}
+      {txSuccess && (
+        <div className="flex items-center gap-2 px-4 py-3 bg-green-900/30 border border-green-500/30 rounded-xl text-sm">
+          <span className="text-green-400">✓</span><p className="text-green-300 font-semibold">{txSuccess}</p>
         </div>
-        <div className="glass rounded-xl p-5">
-          <p className="text-sm text-gray-400 mb-1">Asset Classes</p>
-          <p className="text-3xl font-bold text-white">{BLOCK_TYPES.length}</p>
-          <p className="text-xs text-purple-400 mt-1">Supported categories</p>
+      )}
+      <div className="bg-gradient-to-r from-cyan-900/40 to-teal-900/40 border border-cyan-700/50 rounded-xl p-6 space-y-4">
+        <div>
+          <h2 className="text-2xl font-bold text-white">2DI Digital Trade Blocks</h2>
+          <p className="text-gray-400 mt-1 text-sm">Tokenized trade finance instruments — infrastructure, commodities, energy, and beyond · ERC-1155 multi-token · Fractional ownership · Secondary market offering</p>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {[
+            { label: 'Blocks Issued', value: blockCount?.toString() ?? '0' },
+            { label: 'Total Value (ETH)', value: totalValue ? parseFloat(formatEther(totalValue as bigint)).toLocaleString() : '0' },
+            { label: 'My Blocks', value: String(ownedIds?.length ?? 0) },
+            { label: 'Asset Classes', value: String(BLOCK_TYPES.length) },
+          ].map(s => (
+            <div key={s.label} className="bg-white/5 border border-white/10 rounded-lg p-3 text-center">
+              <div className="text-white font-bold text-lg">{s.value}</div>
+              <div className="text-gray-400 text-xs mt-0.5">{s.label}</div>
+            </div>
+          ))}
         </div>
       </div>
 
@@ -279,11 +305,6 @@ export default function DigitalTradeBlocksDashboard() {
                 {creating || createConfirming ? 'Creating Block...' : createSuccess ? 'Block Created!' : 'Create Trade Block'}
               </button>
 
-              {createError && (
-                <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg p-3">
-                  {createError.message}
-                </p>
-              )}
             </div>
           )}
 

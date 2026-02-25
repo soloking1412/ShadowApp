@@ -90,7 +90,7 @@ export default function IchimokuChart({ currencyPair, height = 500 }: IchimokuCh
       lineStyle: LineStyle.Dotted,
     });
 
-    const mockData = generateMockData(100);
+    const mockData = generateDeterministicData(100);
     const ichimokuData = calculateIchimoku(mockData);
 
     candlestickSeries.setData(mockData);
@@ -176,20 +176,28 @@ export default function IchimokuChart({ currencyPair, height = 500 }: IchimokuCh
   );
 }
 
-function generateMockData(count: number): CandlestickData[] {
+// Deterministic seeded generator — same output for same day, no Math.random()
+function seededHash(n: number): number {
+  let x = Math.sin(n * 9301 + 49297) * 233280;
+  return x - Math.floor(x); // 0..1
+}
+
+function generateDeterministicData(count: number): CandlestickData[] {
   const data: CandlestickData[] = [];
   let basePrice = 50000;
   const now = Math.floor(Date.now() / 1000);
   const interval = 86400;
+  // Daily seed — data stays consistent within the same UTC day
+  const daySeed = Math.floor(Date.now() / (86400 * 1000));
 
   for (let i = 0; i < count; i++) {
+    const s = daySeed * 10000 + i;
     const time = (now - (count - i) * interval) as Time;
-    const open = basePrice + (Math.random() - 0.5) * 1000;
-    const close = open + (Math.random() - 0.5) * 2000;
-    const high = Math.max(open, close) + Math.random() * 500;
-    const low = Math.min(open, close) - Math.random() * 500;
-
-    data.push({ time, open, high, low, close });
+    const open   = basePrice + (seededHash(s)     - 0.5) * 1000;
+    const close  = open      + (seededHash(s + 1) - 0.5) * 2000;
+    const high   = Math.max(open, close) + seededHash(s + 2) * 500;
+    const low    = Math.min(open, close) - seededHash(s + 3) * 500;
+    data.push({ time, open: +open.toFixed(2), high: +high.toFixed(2), low: +low.toFixed(2), close: +close.toFixed(2) });
     basePrice = close;
   }
 

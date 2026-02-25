@@ -100,7 +100,7 @@ export default function ChatWindow() {
     if (!inputMessage.trim() || !address) return;
 
     const newMsg: Message = {
-      id: `${Date.now()}_${Math.random().toString(36).slice(2)}`,
+      id: crypto.randomUUID(),
       sender: address,
       senderName: `${address.slice(0, 6)}…${address.slice(-4)}`,
       content: inputMessage.trim(),

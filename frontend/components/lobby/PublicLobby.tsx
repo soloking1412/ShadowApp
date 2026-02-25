@@ -1,97 +1,128 @@
 "use client";
 
 import { useState } from "react";
+import { useAccount } from "wagmi";
+import { formatEther } from "viem";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import {
+  useProposalCounter,
+  useGetProposal,
+  useCastDAOVote,
+  usePropose,
+  DAO_PROPOSAL_CATEGORIES,
+  DAO_VOTE_SUPPORT,
+} from "@/hooks/contracts/useSovereignInvestmentDAO";
 
-interface LobbyProposal {
-  id: string;
-  title: string;
-  description: string;
-  category: "monetary" | "fiscal" | "investment" | "regulation";
-  author: string;
-  votes: number;
-  status: "active" | "under_review" | "approved" | "rejected";
-  timestamp: number;
+// Category display mapping
+const CATEGORY_LABELS: Record<number, string> = {
+  0: 'Treasury', 1: 'Infrastructure', 2: 'Policy',
+  3: 'Emergency', 4: 'Upgrade', 5: 'Parameter', 6: 'Ministry',
+};
+const CATEGORY_COLORS: Record<number, string> = {
+  0: 'bg-yellow-500', 1: 'bg-blue-500', 2: 'bg-purple-500',
+  3: 'bg-red-500',    4: 'bg-cyan-500', 5: 'bg-orange-500', 6: 'bg-green-500',
+};
+
+// Single proposal row — hooks must be called at top level, so we use a sub-component
+function ProposalCard({ id }: { id: bigint }) {
+  const { data } = useGetProposal(id);
+  const { castDAOVote, isPending: voting } = useCastDAOVote();
+  const { address } = useAccount();
+
+  if (!data) return (
+    <div className="bg-white/5 rounded-xl p-4 animate-pulse h-24" />
+  );
+
+  const p = data as {
+    proposalId: bigint; category: number; proposer: `0x${string}`;
+    description: string; forVotes: bigint; againstVotes: bigint;
+    abstainVotes: bigint; executed: boolean; cancelled: boolean;
+    startTime: bigint; endTime: bigint;
+  };
+
+  const total = Number(p.forVotes + p.againstVotes + p.abstainVotes);
+  const forPct = total > 0 ? Math.round((Number(p.forVotes) / total) * 100) : 0;
+  const isActive = !p.executed && !p.cancelled && BigInt(Math.floor(Date.now() / 1000)) <= p.endTime;
+  const statusLabel = p.executed ? 'Executed' : p.cancelled ? 'Cancelled' : isActive ? 'Active' : 'Closed';
+  const statusColor = p.executed ? 'bg-blue-100 text-blue-800' : p.cancelled ? 'bg-red-100 text-red-800'
+    : isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600';
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-start justify-between gap-4">
+          <div className="space-y-2 flex-1 min-w-0">
+            <CardTitle className="text-base line-clamp-2">{p.description || `Proposal #${p.proposalId.toString()}`}</CardTitle>
+            <div className="flex gap-2 flex-wrap">
+              <Badge className={CATEGORY_COLORS[p.category] ?? 'bg-gray-500'}>
+                {CATEGORY_LABELS[p.category] ?? 'Unknown'}
+              </Badge>
+              <Badge className={statusColor}>{statusLabel}</Badge>
+            </div>
+          </div>
+          <div className="text-right shrink-0">
+            <div className="text-lg font-bold text-green-400">{Number(p.forVotes).toLocaleString()}</div>
+            <div className="text-xs text-gray-400">for votes</div>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {/* Vote bar */}
+        <div>
+          <div className="flex justify-between text-xs text-gray-400 mb-1">
+            <span>For: {forPct}%</span>
+            <span>Against: {total > 0 ? Math.round((Number(p.againstVotes) / total) * 100) : 0}%</span>
+          </div>
+          <div className="h-2 rounded bg-white/10 overflow-hidden">
+            <div className="h-full bg-green-500 transition-all" style={{ width: `${forPct}%` }} />
+          </div>
+        </div>
+        <div className="flex items-center justify-between">
+          <div className="text-xs text-muted-foreground truncate">
+            By {p.proposer.slice(0, 6)}…{p.proposer.slice(-4)}
+          </div>
+          {address && isActive && (
+            <div className="flex gap-2">
+              <Button size="sm" className="h-7 text-xs bg-green-600 hover:bg-green-700"
+                disabled={voting}
+                onClick={() => castDAOVote(p.proposalId, DAO_VOTE_SUPPORT.For)}>
+                {voting ? '…' : 'For'}
+              </Button>
+              <Button size="sm" className="h-7 text-xs bg-red-600 hover:bg-red-700"
+                disabled={voting}
+                onClick={() => castDAOVote(p.proposalId, DAO_VOTE_SUPPORT.Against)}>
+                {voting ? '…' : 'Against'}
+              </Button>
+            </div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
 }
 
 export default function PublicLobby() {
-  const [proposals, setProposals] = useState<LobbyProposal[]>([
-    {
-      id: "1",
-      title: "Increase Infrastructure Investment in Developing Nations",
-      description: "Propose 15% increase in global infrastructure bonds for emerging markets",
-      category: "investment",
-      author: "0x1234...5678",
-      votes: 1250,
-      status: "active",
-      timestamp: Date.now() - 86400000,
-    },
-    {
-      id: "2",
-      title: "Reform International Monetary Policy",
-      description: "Advocate for decentralized reserve currency system",
-      category: "monetary",
-      author: "0xabcd...ef12",
-      votes: 890,
-      status: "under_review",
-      timestamp: Date.now() - 172800000,
-    },
-  ]);
+  const { address } = useAccount();
+  const { data: proposalCountRaw } = useProposalCounter();
+  const { propose, isPending: proposing, isSuccess: proposeDone } = usePropose();
 
-  const [newProposal, setNewProposal] = useState({
-    title: "",
-    description: "",
-    category: "investment" as const,
-  });
+  const proposalCount = typeof proposalCountRaw === 'bigint' ? Number(proposalCountRaw) : 0;
+  const proposalIds = Array.from({ length: proposalCount }, (_, i) => BigInt(i + 1));
 
-  const handleSubmitProposal = () => {
-    if (!newProposal.title || !newProposal.description) return;
+  const [newTitle, setNewTitle] = useState('');
+  const [newDesc, setNewDesc] = useState('');
+  const [category, setCategory] = useState(0);
 
-    const proposal: LobbyProposal = {
-      id: Date.now().toString(),
-      title: newProposal.title,
-      description: newProposal.description,
-      category: newProposal.category,
-      author: "0x0000...0000", // Would be connected wallet
-      votes: 0,
-      status: "active",
-      timestamp: Date.now(),
-    };
-
-    setProposals([proposal, ...proposals]);
-    setNewProposal({ title: "", description: "", category: "investment" });
-  };
-
-  const handleVote = (id: string) => {
-    setProposals(
-      proposals.map((p) =>
-        p.id === id ? { ...p, votes: p.votes + 1 } : p
-      )
-    );
-  };
-
-  const getCategoryColor = (category: string) => {
-    const colors = {
-      monetary: "bg-blue-500",
-      fiscal: "bg-green-500",
-      investment: "bg-purple-500",
-      regulation: "bg-orange-500",
-    };
-    return colors[category as keyof typeof colors];
-  };
-
-  const getStatusColor = (status: string) => {
-    const colors = {
-      active: "bg-green-100 text-green-800",
-      under_review: "bg-yellow-100 text-yellow-800",
-      approved: "bg-blue-100 text-blue-800",
-      rejected: "bg-red-100 text-red-800",
-    };
-    return colors[status as keyof typeof colors];
+  const handleSubmit = () => {
+    if (!newTitle.trim() || !newDesc.trim()) return;
+    const description = `${newTitle.trim()}\n\n${newDesc.trim()}`;
+    propose([], [], [], description, category);
+    setNewTitle('');
+    setNewDesc('');
   };
 
   return (
@@ -99,7 +130,7 @@ export default function PublicLobby() {
       <div className="text-center mb-8">
         <h1 className="text-4xl font-bold mb-2">Public Lobby</h1>
         <p className="text-muted-foreground">
-          Propose financial changes and investments to shape the world economy
+          Propose financial changes and investments · {proposalCount} on-chain proposals
         </p>
       </div>
 
@@ -108,93 +139,55 @@ export default function PublicLobby() {
         <CardHeader>
           <CardTitle>Submit New Proposal</CardTitle>
           <CardDescription>
-            Share your ideas for economic reforms and investment strategies
+            {address ? 'Share your ideas for economic reforms — submitted to SovereignInvestmentDAO' : 'Connect wallet to submit proposals'}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div>
             <label className="text-sm font-medium">Title</label>
-            <Input
-              placeholder="Brief title for your proposal"
-              value={newProposal.title}
-              onChange={(e) =>
-                setNewProposal({ ...newProposal, title: e.target.value })
-              }
-            />
+            <Input placeholder="Brief title for your proposal" value={newTitle}
+              onChange={e => setNewTitle(e.target.value)} />
           </div>
           <div>
             <label className="text-sm font-medium">Description</label>
-            <Textarea
-              placeholder="Detailed description of your proposal and expected impact"
-              rows={4}
-              value={newProposal.description}
-              onChange={(e) =>
-                setNewProposal({ ...newProposal, description: e.target.value })
-              }
-            />
+            <Textarea placeholder="Detailed description and expected impact" rows={4}
+              value={newDesc} onChange={e => setNewDesc(e.target.value)} />
           </div>
           <div>
             <label className="text-sm font-medium">Category</label>
-            <select
-              className="w-full p-2 border rounded"
-              value={newProposal.category}
-              onChange={(e) =>
-                setNewProposal({
-                  ...newProposal,
-                  category: e.target.value as any,
-                })
-              }
-            >
-              <option value="investment">Investment</option>
-              <option value="monetary">Monetary Policy</option>
-              <option value="fiscal">Fiscal Policy</option>
-              <option value="regulation">Regulation</option>
+            <select className="w-full p-2 border rounded bg-background text-foreground"
+              value={category} onChange={e => setCategory(Number(e.target.value))}>
+              {Object.entries(DAO_PROPOSAL_CATEGORIES).map(([label, val]) => (
+                <option key={val} value={val}>{label}</option>
+              ))}
             </select>
           </div>
-          <Button onClick={handleSubmitProposal} className="w-full">
-            Submit Proposal
+          <Button onClick={handleSubmit}
+            disabled={!address || proposing || !newTitle.trim() || !newDesc.trim()}
+            className="w-full">
+            {proposing ? 'Submitting to chain…' : proposeDone ? '✓ Submitted' : 'Submit Proposal'}
           </Button>
+          {!address && (
+            <p className="text-xs text-center text-muted-foreground">Connect wallet to submit</p>
+          )}
         </CardContent>
       </Card>
 
-      {/* Active Proposals */}
+      {/* On-chain Proposals */}
       <div className="space-y-4">
-        <h2 className="text-2xl font-bold">Active Proposals</h2>
-        {proposals.map((proposal) => (
-          <Card key={proposal.id}>
-            <CardHeader>
-              <div className="flex items-start justify-between">
-                <div className="space-y-2">
-                  <CardTitle>{proposal.title}</CardTitle>
-                  <div className="flex gap-2">
-                    <Badge className={getCategoryColor(proposal.category)}>
-                      {proposal.category}
-                    </Badge>
-                    <Badge className={getStatusColor(proposal.status)}>
-                      {proposal.status.replace("_", " ")}
-                    </Badge>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="text-2xl font-bold">{proposal.votes}</div>
-                  <div className="text-sm text-muted-foreground">votes</div>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <p className="text-muted-foreground">{proposal.description}</p>
-              <div className="flex items-center justify-between">
-                <div className="text-sm text-muted-foreground">
-                  By {proposal.author} •{" "}
-                  {new Date(proposal.timestamp).toLocaleDateString()}
-                </div>
-                <Button onClick={() => handleVote(proposal.id)}>
-                  Vote for this proposal
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+        <h2 className="text-2xl font-bold">On-Chain Proposals ({proposalCount})</h2>
+        {proposalCount === 0 ? (
+          <div className="text-center py-12 bg-white/5 rounded-xl">
+            <p className="text-4xl mb-3">🏛</p>
+            <p className="text-gray-400">No proposals yet — be the first to submit one.</p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {proposalIds.slice().reverse().map(id => (
+              <ProposalCard key={id.toString()} id={id} />
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

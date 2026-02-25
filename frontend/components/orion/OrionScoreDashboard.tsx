@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAccount } from 'wagmi';
 import {
   useOrionCountryCount, useOrionAllCountries, useOrionApprovedCountries,
@@ -35,9 +35,28 @@ export default function OrionScoreDashboard() {
   // Register
   const [regCode,setRegCode]=useState(''); const [regName,setRegName]=useState('');
 
-  const { scoreCountry, isPending: scoring } = useOrionScoreCountry();
-  const { updateVariable, isPending: updating } = useOrionUpdateVariable();
-  const { registerCountry, isPending: registering, isSuccess: registered } = useOrionRegisterCountry();
+  const { scoreCountry, isPending: scoring, isSuccess: scoreDone, error: scoreErr } = useOrionScoreCountry();
+  const { updateVariable, isPending: updating, isSuccess: updateDone, error: updateErr } = useOrionUpdateVariable();
+  const { registerCountry, isPending: registering, isSuccess: registered, error: regErr } = useOrionRegisterCountry();
+
+  const [txError, setTxError] = useState<string | null>(null);
+  const [txSuccess, setTxSuccess] = useState<string | null>(null);
+  useEffect(() => {
+    const err = scoreErr ?? updateErr ?? regErr;
+    if (!err) return;
+    const msg = (err as {shortMessage?:string})?.shortMessage ?? (err as {message?:string})?.message ?? 'Transaction failed';
+    setTxError(msg.length > 120 ? msg.slice(0, 120) + '…' : msg);
+    const t = setTimeout(() => setTxError(null), 7000);
+    return () => clearTimeout(t);
+  }, [scoreErr, updateErr, regErr]);
+  useEffect(() => {
+    if (scoreDone) { setTxSuccess('Country scored — composite score updated on-chain'); }
+    else if (updateDone) { setTxSuccess('Variable updated successfully'); }
+    else if (registered) { setTxSuccess('Country registered on Orion Algorithm'); }
+    else return;
+    const t = setTimeout(() => setTxSuccess(null), 5000);
+    return () => clearTimeout(t);
+  }, [scoreDone, updateDone, registered]);
 
   const TABS: {id:Tab;label:string}[] = [{id:'overview',label:'Overview'},{id:'score',label:'Score Country'},{id:'update',label:'Update Variable'},{id:'lookup',label:'Lookup'},{id:'register',label:'Register'}];
 
@@ -49,9 +68,36 @@ export default function OrionScoreDashboard() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold text-white">Orion Algorithm</h2>
-        <p className="text-gray-400 mt-1">9-variable LIFO country investment scoring. Systemic (25%) → Cashflow (15%) → Financial (12%) → Credit (12%) → EPS (10%) → Dividend (8%) → Banking (8%) → Inflation (5%) → Currency (5%).</p>
+      {txError && (
+        <div className="flex items-start gap-3 px-4 py-3 bg-red-900/40 border border-red-500/40 rounded-xl text-sm">
+          <span className="text-red-400 shrink-0 mt-0.5">✕</span>
+          <div className="flex-1"><p className="font-semibold text-red-300">Transaction failed</p><p className="text-red-400/80 text-xs mt-0.5">{txError}</p></div>
+          <button onClick={() => setTxError(null)} className="text-red-500 hover:text-red-300 text-xs shrink-0">dismiss</button>
+        </div>
+      )}
+      {txSuccess && (
+        <div className="flex items-center gap-2 px-4 py-3 bg-green-900/30 border border-green-500/30 rounded-xl text-sm">
+          <span className="text-green-400">✓</span><p className="text-green-300 font-semibold">{txSuccess}</p>
+        </div>
+      )}
+      <div className="bg-gradient-to-r from-cyan-900/40 to-blue-900/40 border border-cyan-700/50 rounded-xl p-6 space-y-4">
+        <div>
+          <h2 className="text-2xl font-bold text-white">Orion Algorithm</h2>
+          <p className="text-gray-400 mt-1 text-sm">9-variable LIFO sovereign investment scoring. Systemic (25%) → Cashflow (15%) → Financial (12%) → Credit (12%) → EPS (10%) → Dividend (8%) → Banking (8%) → Inflation (5%) → Currency (5%). Approval threshold: score ≥ 45.</p>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {[
+            { label: 'Registered Countries', value: String(countryCount??0) },
+            { label: 'Approved for FDI', value: String((approvedCountries as string[]|undefined)?.length??0) },
+            { label: 'Approval Threshold', value: '≥ 45' },
+            { label: 'Scoring Variables', value: '9' },
+          ].map(s=>(
+            <div key={s.label} className="bg-white/5 border border-white/10 rounded-lg p-3 text-center">
+              <div className="text-white font-bold text-lg">{s.value}</div>
+              <div className="text-gray-400 text-xs mt-0.5">{s.label}</div>
+            </div>
+          ))}
+        </div>
       </div>
       <div className="flex gap-2 flex-wrap border-b border-white/10 pb-2">
         {TABS.map(t=><button key={t.id} onClick={()=>setTab(t.id)} className={tc(tab===t.id)}>{t.label}</button>)}

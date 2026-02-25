@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAccount } from 'wagmi';
 import { formatEther, parseEther } from 'viem';
 import {
@@ -38,10 +38,30 @@ export default function FreeTradeRegistryDashboard() {
   const [lookupId,setLookupId]=useState('');
   const { data: agreementData } = useFTRGetAgreement(lookupId ? BigInt(lookupId) : 0n);
 
-  const { createAgreement, isPending: creating } = useFTRCreateAgreement();
-  const { signAgreement, isPending: signing } = useFTRSignAgreement();
-  const { raiseDispute, isPending: disputing } = useFTRRaiseDispute();
-  const { completeAgreement, isPending: completing } = useFTRCompleteAgreement();
+  const { createAgreement, isPending: creating, isSuccess: createDone, error: createErr } = useFTRCreateAgreement();
+  const { signAgreement, isPending: signing, isSuccess: signDone, error: signErr } = useFTRSignAgreement();
+  const { raiseDispute, isPending: disputing, isSuccess: disputeDone, error: disputeErr } = useFTRRaiseDispute();
+  const { completeAgreement, isPending: completing, isSuccess: completeDone, error: completeErr } = useFTRCompleteAgreement();
+
+  const [txError, setTxError] = useState<string | null>(null);
+  const [txSuccess, setTxSuccess] = useState<string | null>(null);
+  useEffect(() => {
+    const err = createErr ?? signErr ?? disputeErr ?? completeErr;
+    if (!err) return;
+    const msg = (err as {shortMessage?:string})?.shortMessage ?? (err as {message?:string})?.message ?? 'Transaction failed';
+    setTxError(msg.length > 120 ? msg.slice(0, 120) + '…' : msg);
+    const t = setTimeout(() => setTxError(null), 7000);
+    return () => clearTimeout(t);
+  }, [createErr, signErr, disputeErr, completeErr]);
+  useEffect(() => {
+    if (createDone) { setTxSuccess('Trade agreement created successfully'); }
+    else if (signDone) { setTxSuccess('Agreement signed — awaiting counterparty'); }
+    else if (disputeDone) { setTxSuccess('Dispute raised — arbitration initiated'); }
+    else if (completeDone) { setTxSuccess('Trade agreement marked complete'); }
+    else return;
+    const t = setTimeout(() => setTxSuccess(null), 5000);
+    return () => clearTimeout(t);
+  }, [createDone, signDone, disputeDone, completeDone]);
 
   const TABS: {id:Tab;label:string}[] = [{id:'overview',label:'Overview'},{id:'create',label:'Create Agreement'},{id:'sign',label:'Sign / Actions'},{id:'myagreements',label:'My Agreements'},{id:'lookup',label:'Lookup'}];
 
@@ -59,9 +79,36 @@ export default function FreeTradeRegistryDashboard() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold text-white">Free Trade Registry</h2>
-        <p className="text-gray-400 mt-1">OZF Global Trade Agreement Registry. WTO + OZF filing support. Incoterms 2020. All trades priced in $OICD. Samuel Global Market Xchange Inc.</p>
+      {txError && (
+        <div className="flex items-start gap-3 px-4 py-3 bg-red-900/40 border border-red-500/40 rounded-xl text-sm">
+          <span className="text-red-400 shrink-0 mt-0.5">✕</span>
+          <div className="flex-1"><p className="font-semibold text-red-300">Transaction failed</p><p className="text-red-400/80 text-xs mt-0.5">{txError}</p></div>
+          <button onClick={() => setTxError(null)} className="text-red-500 hover:text-red-300 text-xs shrink-0">dismiss</button>
+        </div>
+      )}
+      {txSuccess && (
+        <div className="flex items-center gap-2 px-4 py-3 bg-green-900/30 border border-green-500/30 rounded-xl text-sm">
+          <span className="text-green-400">✓</span><p className="text-green-300 font-semibold">{txSuccess}</p>
+        </div>
+      )}
+      <div className="bg-gradient-to-r from-teal-900/40 to-emerald-900/40 border border-teal-700/50 rounded-xl p-6 space-y-4">
+        <div>
+          <h2 className="text-2xl font-bold text-white">Free Trade Registry</h2>
+          <p className="text-gray-400 mt-1 text-sm">OZF Global Trade Agreement Registry · WTO + OZF filing · Incoterms 2020 · All trades priced in $OICD · Samuel Global Market Xchange Inc. Process: Create → Both parties sign → Issue Bill of Lading → Register WTO/OZF → Complete.</p>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {[
+            { label: 'Total Agreements', value: String(agreementCount??0) },
+            { label: 'Bills of Lading', value: String(bolCount??0) },
+            { label: 'Trade Value (OICD)', value: totalValue?formatEther(totalValue as bigint).split('.')[0]:'0' },
+            { label: 'Incoterms', value: 'v2020' },
+          ].map(s=>(
+            <div key={s.label} className="bg-white/5 border border-white/10 rounded-lg p-3 text-center">
+              <div className="text-white font-bold text-lg">{s.value}</div>
+              <div className="text-gray-400 text-xs mt-0.5">{s.label}</div>
+            </div>
+          ))}
+        </div>
       </div>
       <div className="flex gap-2 flex-wrap border-b border-white/10 pb-2">
         {TABS.map(t=><button key={t.id} onClick={()=>setTab(t.id)} className={tc(tab===t.id)}>{t.label}</button>)}

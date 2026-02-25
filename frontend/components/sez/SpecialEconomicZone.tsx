@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAccount } from 'wagmi';
 import { formatEther, parseEther } from 'viem';
 const safeEther = (v: string) => { try { return parseEther(v || '0'); } catch { return 0n; } };
@@ -71,6 +71,24 @@ export default function SpecialEconomicZoneDashboard() {
   const { establishSEZ, isPending: establishing, isConfirming: estConfirming, isSuccess: estSuccess, error: estError } = useEstablishSEZ();
   const { registerEnterprise, isPending: registering, isConfirming: regConfirming, isSuccess: regSuccess, error: regError } = useRegisterEnterprise();
 
+  const [txError, setTxError] = useState<string|null>(null);
+  const [txSuccess, setTxSuccess] = useState<string|null>(null);
+  useEffect(() => {
+    const err = estError ?? regError;
+    if (!err) return;
+    const msg = (err as {shortMessage?:string})?.shortMessage ?? (err as {message?:string})?.message ?? 'Transaction failed';
+    setTxError(msg.length > 120 ? msg.slice(0, 120) + '…' : msg);
+    const t = setTimeout(() => setTxError(null), 7000);
+    return () => clearTimeout(t);
+  }, [estError, regError]);
+  useEffect(() => {
+    if (estSuccess) { setTxSuccess('Special Economic Zone established — zone registry updated'); }
+    else if (regSuccess) { setTxSuccess('Enterprise registered in SEZ — license issued on-chain'); }
+    else return;
+    const t = setTimeout(() => setTxSuccess(null), 5000);
+    return () => clearTimeout(t);
+  }, [estSuccess, regSuccess]);
+
   const handleEstablish = () => {
     if (!zoneName || !location || !zoneCountry) return;
     const activities = allowedActivities
@@ -92,7 +110,9 @@ export default function SpecialEconomicZoneDashboard() {
     );
   };
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const zone = zoneData as any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const stats = zoneStats as any;
 
   const TABS: { id: Tab; label: string }[] = [
@@ -104,38 +124,35 @@ export default function SpecialEconomicZoneDashboard() {
 
   return (
     <div className="space-y-6">
-      <div className="glass rounded-xl p-6">
-        <h2 className="text-2xl font-bold text-white mb-1">Special Economic Zones</h2>
-        <p className="text-gray-400">
-          On-chain SEZ registry — free trade zones, export processing, tech parks, and financial hubs
-        </p>
-      </div>
-
-      {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="glass rounded-xl p-5">
-          <p className="text-sm text-gray-400 mb-1">Active Zones</p>
-          <p className="text-3xl font-bold text-white">{zoneCount?.toString() ?? '—'}</p>
-          <p className="text-xs text-blue-400 mt-1">SEZs registered</p>
+      {txError && (
+        <div className="flex items-start gap-3 px-4 py-3 bg-red-900/40 border border-red-500/40 rounded-xl text-sm">
+          <span className="text-red-400 shrink-0 mt-0.5">✕</span>
+          <div className="flex-1"><p className="font-semibold text-red-300">Transaction failed</p><p className="text-red-400/80 text-xs mt-0.5">{txError}</p></div>
+          <button onClick={() => setTxError(null)} className="text-red-500 hover:text-red-300 text-xs shrink-0">dismiss</button>
         </div>
-        <div className="glass rounded-xl p-5">
-          <p className="text-sm text-gray-400 mb-1">Enterprises</p>
-          <p className="text-3xl font-bold text-white">{enterpriseCount?.toString() ?? '—'}</p>
-          <p className="text-xs text-green-400 mt-1">Licensed companies</p>
+      )}
+      {txSuccess && (
+        <div className="flex items-center gap-2 px-4 py-3 bg-green-900/30 border border-green-500/30 rounded-xl text-sm">
+          <span className="text-green-400">✓</span><p className="text-green-300 font-semibold">{txSuccess}</p>
         </div>
-        <div className="glass rounded-xl p-5">
-          <p className="text-sm text-gray-400 mb-1">Total Investment</p>
-          <p className="text-2xl font-bold text-white">
-            {totalInvestment ? `${parseFloat(formatEther(totalInvestment as bigint)).toLocaleString()} ETH` : '—'}
-          </p>
-          <p className="text-xs text-purple-400 mt-1">Capital deployed</p>
+      )}
+      <div className="bg-gradient-to-r from-orange-900/40 to-amber-900/40 border border-orange-700/50 rounded-xl p-6 space-y-4">
+        <div>
+          <h2 className="text-2xl font-bold text-white">Special Economic Zones</h2>
+          <p className="text-gray-400 mt-1 text-sm">On-chain SEZ registry — free trade zones, export processing, tech parks, and financial hubs · Duty-free import/export · Tax incentives for licensed enterprises</p>
         </div>
-        <div className="glass rounded-xl p-5">
-          <p className="text-sm text-gray-400 mb-1">Employment</p>
-          <p className="text-3xl font-bold text-white">
-            {totalEmployment ? Number(totalEmployment).toLocaleString() : '—'}
-          </p>
-          <p className="text-xs text-amber-400 mt-1">Jobs created</p>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {[
+            { label: 'Active Zones', value: zoneCount?.toString() ?? '0' },
+            { label: 'Enterprises', value: enterpriseCount?.toString() ?? '0' },
+            { label: 'Investment (ETH)', value: totalInvestment ? parseFloat(formatEther(totalInvestment as bigint)).toLocaleString() : '0' },
+            { label: 'Jobs Created', value: totalEmployment ? Number(totalEmployment).toLocaleString() : '0' },
+          ].map(s => (
+            <div key={s.label} className="bg-white/5 border border-white/10 rounded-lg p-3 text-center">
+              <div className="text-white font-bold text-lg">{s.value}</div>
+              <div className="text-gray-400 text-xs mt-0.5">{s.label}</div>
+            </div>
+          ))}
         </div>
       </div>
 
@@ -304,11 +321,6 @@ export default function SpecialEconomicZoneDashboard() {
                 {establishing || estConfirming ? 'Establishing Zone...' : estSuccess ? 'Zone Established!' : 'Establish SEZ'}
               </button>
 
-              {estError && (
-                <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg p-3">
-                  {estError.message}
-                </p>
-              )}
             </div>
           )}
 
@@ -400,11 +412,6 @@ export default function SpecialEconomicZoneDashboard() {
                 {registering || regConfirming ? 'Registering...' : regSuccess ? 'Enterprise Registered!' : 'Register Enterprise'}
               </button>
 
-              {regError && (
-                <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg p-3">
-                  {regError.message}
-                </p>
-              )}
             </div>
           )}
 

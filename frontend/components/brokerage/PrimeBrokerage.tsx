@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAccount } from 'wagmi';
 import { formatUnits } from 'viem';
 import {
@@ -19,16 +19,51 @@ export default function PrimeBrokerageDashboard() {
 
   const { data: account } = useClientAccount(address);
   const { data: riskMetrics } = useClientRiskMetrics(address);
-  const { registerClient, isPending: registering, isSuccess: registered } = useRegisterClient();
-  const { depositCollateral, isPending: depositing, isSuccess: deposited } = useDepositCollateral();
-  const { requestLoan, isPending: loaning, isSuccess: loaned } = useRequestMarginLoan();
+  const { registerClient, isPending: registering, isSuccess: registered, error: regErr } = useRegisterClient();
+  const { depositCollateral, isPending: depositing, isSuccess: deposited, error: depositErr } = useDepositCollateral();
+  const { requestLoan, isPending: loaning, isSuccess: loaned, error: loanErr } = useRequestMarginLoan();
+
+  const [txError,   setTxError]   = useState<string | null>(null);
+  const [txSuccess, setTxSuccess] = useState<string | null>(null);
+
+  useEffect(() => {
+    const err = regErr ?? depositErr ?? loanErr;
+    if (!err) return;
+    const msg = (err as { shortMessage?: string })?.shortMessage ?? err.message ?? 'Transaction failed';
+    setTxError(msg.length > 120 ? msg.slice(0, 120) + '…' : msg);
+    const t = setTimeout(() => setTxError(null), 7000);
+    return () => clearTimeout(t);
+  }, [regErr, depositErr, loanErr]);
+
+  useEffect(() => {
+    const msgs: [boolean, string][] = [[registered, 'Client registered'], [deposited, 'Collateral deposited'], [loaned, 'Loan requested']];
+    const done = msgs.find(([ok]) => ok);
+    if (!done) return;
+    setTxSuccess(done[1]);
+    const t = setTimeout(() => setTxSuccess(null), 5000);
+    return () => clearTimeout(t);
+  }, [registered, deposited, loaned]);
 
   const notDeployed = !CONTRACTS.PrimeBrokerage;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const acc = account as any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const risk = riskMetrics as any;
 
   return (
     <div className="space-y-6">
+      {txError && (
+        <div className="flex items-start gap-3 px-4 py-3 bg-red-900/40 border border-red-500/40 rounded-xl text-sm">
+          <span className="text-red-400 shrink-0 mt-0.5">✕</span>
+          <div className="flex-1"><p className="font-semibold text-red-300">Transaction failed</p><p className="text-red-400/80 text-xs mt-0.5">{txError}</p></div>
+          <button onClick={() => setTxError(null)} className="text-red-500 hover:text-red-300 text-xs shrink-0">dismiss</button>
+        </div>
+      )}
+      {txSuccess && (
+        <div className="flex items-center gap-2 px-4 py-3 bg-green-900/30 border border-green-500/30 rounded-xl text-sm">
+          <span className="text-green-400">✓</span><p className="text-green-300 font-semibold">{txSuccess}</p>
+        </div>
+      )}
       <div className="glass rounded-xl p-6">
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">

@@ -41,7 +41,21 @@ import DTXDashboard from '@/components/dtx/DTXDashboard';
 import DCMCharter from '@/components/dcm/DCMCharter';
 import PriceOracleDashboard from '@/components/oracle/PriceOracleDashboard';
 import GlobalExchangeTrading from '@/components/trading/GlobalExchangeTrading';
+import TradingTerminal from '@/components/trading/TradingTerminal';
+import ODCMDashboard from '@/components/odcm/ODCMDashboard';
+import SGMTokenDashboard from '@/components/sgm/SGMTokenDashboard';
+import SGMXTokenDashboard from '@/components/sgmx/SGMXTokenDashboard';
 import AnvilDevTools from '@/components/devtools/AnvilDevTools';
+import AnvilStatusBanner from '@/components/ui/AnvilStatusBanner';
+// Live stats hooks
+import { usePreAllocTotalValidators, usePreAllocTotalShareholders } from '@/hooks/contracts/usePreAllocation';
+import { useJobsBoardJobCounter, useJobsBoardTotalCompleted } from '@/hooks/contracts/useJobsBoard';
+import { useFTRAgreementCounter, useFTRBolCounter } from '@/hooks/contracts/useFreeTradeRegistry';
+import { useAVSTotalAssets, useAVSTotalCountries } from '@/hooks/contracts/useAVSPlatform';
+import { useICFLoanCounter, useICFActiveLoans } from '@/hooks/contracts/useICFLending';
+import { useOrionCountryCount, useOrionApprovedCountries } from '@/hooks/contracts/useOrionScore';
+import { useBrokerCounter, useActiveBrokers } from '@/hooks/contracts/usePublicBroker';
+import { useOTDTotalHolders, useOTDTotalVotes } from '@/hooks/contracts/useOTDToken';
 
 type Section =
   | 'overview' | 'trading' | 'amm' | 'treasury' | 'bonds'
@@ -50,7 +64,7 @@ type Section =
   | 'gov-securities' | 'trade-blocks' | 'parliament' | 'arms' | 'infrastructure' | 'sez'
   | 'sovereign-dex' | 'bond-auction' | 'broker-registry' | 'hft-engine'
   | 'avs-platform' | 'otd-token' | 'orion-score' | 'free-trade' | 'icf-lending' | 'pre-alloc' | 'jobs-board'
-  | 'dtx' | 'dcm-charter' | 'price-oracle' | 'exchange-trading';
+  | 'dtx' | 'dcm-charter' | 'price-oracle' | 'exchange-trading' | 'odcm' | 'sgm-token' | 'sgmx-token';
 
 const chainId = parseInt(process.env.NEXT_PUBLIC_CHAIN_ID || '421614');
 const isLocal = chainId === 31337;
@@ -58,6 +72,24 @@ const isLocal = chainId === 31337;
 export default function Home() {
   const [activeSection, setActiveSection] = useState<Section>('overview');
   const [showChat, setShowChat] = useState(false);
+
+  // Live network stats from contracts
+  const { data: preAllocValidators } = usePreAllocTotalValidators();
+  const { data: preAllocShareholders } = usePreAllocTotalShareholders();
+  const { data: totalJobs } = useJobsBoardJobCounter();
+  const { data: jobsDone } = useJobsBoardTotalCompleted();
+  const { data: tradeAgreements } = useFTRAgreementCounter();
+  const { data: billsOfLading } = useFTRBolCounter();
+  const { data: avsAssetCount } = useAVSTotalAssets();
+  const { data: avsCountryCount } = useAVSTotalCountries();
+  const { data: icfLoanCount } = useICFLoanCounter();
+  const { data: icfActiveLoans } = useICFActiveLoans();
+  const { data: orionCountryCount } = useOrionCountryCount();
+  const { data: orionApproved } = useOrionApprovedCountries();
+  const { data: brokerTotal } = useBrokerCounter();
+  const { data: brokerActive } = useActiveBrokers();
+  const { data: otdHolders } = useOTDTotalHolders();
+  const { data: otdVotes } = useOTDTotalVotes();
 
   const navigation: { id: Section; name: string; icon: string; group: string }[] = [
     // Core Platform
@@ -82,7 +114,6 @@ export default function Home() {
     { id: 'sez',            name: 'Economic Zones',        icon: '🏙️', group: 'Sovereign' },
     { id: 'parliament',     name: 'OZF Parliament',        icon: '🌐', group: 'Sovereign' },
     { id: 'arms',           name: 'Arms Compliance',       icon: '🛡️', group: 'Sovereign' },
-    // Governance & Comms
     // Finance & Capital — Phase 2C
     { id: 'sovereign-dex',  name: 'Sovereign DEX',         icon: '🔀', group: 'Finance' },
     { id: 'bond-auction',   name: 'Bond Auctions',         icon: '🏷️', group: 'Finance' },
@@ -100,7 +131,10 @@ export default function Home() {
     { id: 'dtx',              name: 'DTX Bourse',          icon: '🏦', group: 'Finance'    },
     { id: 'dcm-charter',      name: 'DCM Charter',         icon: '📐', group: 'Finance'    },
     { id: 'price-oracle',     name: 'Price Oracle',        icon: '📡', group: 'Finance'    },
-    { id: 'exchange-trading', name: 'Exchange Trading',    icon: '📈', group: 'Finance'    },
+    { id: 'exchange-trading', name: 'Trading Terminal',    icon: '🖥️', group: 'Finance'    },
+    { id: 'odcm',             name: 'ODCM Dashboard',      icon: '🌐', group: 'Finance'    },
+    { id: 'sgm-token',        name: 'SGM Token',           icon: '🟣', group: 'Finance'    },
+    { id: 'sgmx-token',       name: 'SGMX Security Token', icon: '🔵', group: 'Finance'    },
     // Governance & Comms
     { id: 'governance',     name: 'DAO Governance',        icon: '⚖️', group: 'Governance' },
     { id: 'lobby',          name: 'Public Lobby',          icon: '🗣️', group: 'Governance' },
@@ -172,118 +206,137 @@ export default function Home() {
 
           {/* Main content */}
           <main className="flex-1 min-w-0">
+            <AnvilStatusBanner />
 
             {activeSection === 'overview' && (
               <div className="space-y-6">
-                {isLocal && <AnvilDevTools />}
-                <div className="glass rounded-xl p-6">
-                  <h2 className="text-3xl font-bold text-white mb-1">ShadowDapp</h2>
-                  <p className="text-gray-400 text-sm mb-1">Version 1.0 / 2.0 — Sovereign investment & decentralized finance · 35 contracts · 18 global exchanges</p>
-                  <p className="text-xs text-purple-400 mb-6">OZHUMANILL ZAYED FEDERATION (OZF)</p>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    {[
-                      { icon: '📜', label: 'Contracts', value: '35' },
-                      { icon: '🌍', label: 'Currencies', value: '61' },
-                      { icon: '🏦', label: 'Countries', value: '46' },
-                      { icon: '⛓️', label: 'Chain', value: isLocal ? 'Anvil 31337' : 'Arb Sepolia' },
-                    ].map(({ icon, label, value }) => (
-                      <div key={label} className="p-5 bg-white/5 border border-white/10 rounded-xl">
-                        <div className="text-2xl mb-2">{icon}</div>
-                        <p className="text-xs text-gray-400 mb-1">{label}</p>
-                        <p className="text-2xl font-bold text-white">{value}</p>
+                {/* {isLocal && <AnvilDevTools />} */}
+
+                {/* Hero Section */}
+                <div className="bg-gradient-to-br from-slate-900/80 via-primary-900/20 to-purple-900/30 border border-primary-500/20 rounded-xl p-6 space-y-5">
+                  <div className="flex items-start justify-between flex-wrap gap-3">
+                    <div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-xs font-semibold uppercase tracking-widest text-primary-400 bg-primary-500/10 px-3 py-1 rounded-full border border-primary-500/20">Obsidian Capital Platform</span>
                       </div>
+                      <h2 className="text-3xl font-bold text-white">ShadowDapp</h2>
+                      <p className="text-gray-400 text-sm mt-1">Alternative Global Digital Economy for Emerging Markets · Ozhumanill Zayed Federation</p>
+                      <p className="text-xs text-gray-500 mt-1">Kratos Smart Chain · ABFT Proof-of-Stake · 250-yr Lease · 40/60 Revenue Split (Obsidian/Country)</p>
+                    </div>
+                    <span className={`text-xs font-medium px-3 py-1 rounded-full border self-start ${isLocal ? 'bg-green-500/20 text-green-400 border-green-500/30' : 'bg-blue-500/20 text-blue-400 border-blue-500/30'}`}>
+                      {isLocal ? '● Anvil 31337' : '● Arb Sepolia'}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                    {[
+                      { icon: '📜', label: 'Contracts', value: '33' },
+                      { icon: '🌍', label: 'Currencies', value: '61' },
+                      { icon: '🏦', label: 'Bourse Centers', value: '5' },
+                      { icon: '💱', label: 'FX Corridors', value: '287' },
+                      { icon: '🎯', label: 'Validator Target', value: '250K' },
+                    ].map(({ icon, label, value }) => (
+                      <div key={label} className="p-4 bg-white/5 border border-white/10 rounded-xl text-center">
+                        <div className="text-xl mb-1">{icon}</div>
+                        <p className="text-2xl font-bold text-white">{value}</p>
+                        <p className="text-xs text-gray-400 mt-0.5">{label}</p>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                    {([
+                      { id: 'treasury' as Section, label: 'Finance', icon: '💰', desc: 'Treasury · Bonds · DEX · Lending', color: 'from-cyan-500/10 to-blue-500/10 border-cyan-500/20 hover:border-cyan-500/50' },
+                      { id: 'infrastructure' as Section, label: 'Sovereign', icon: '🌐', desc: 'Infrastructure · SEZs · Parliament', color: 'from-purple-500/10 to-violet-500/10 border-purple-500/20 hover:border-purple-500/50' },
+                      { id: 'banking' as Section, label: 'Banking', icon: '🏦', desc: 'IBAN Banking · 287 FX Corridors', color: 'from-emerald-500/10 to-teal-500/10 border-emerald-500/20 hover:border-emerald-500/50' },
+                      { id: 'trading' as Section, label: 'Platform', icon: '🌑', desc: 'Dark Pool · AMM · Invites', color: 'from-slate-500/10 to-gray-500/10 border-slate-500/20 hover:border-slate-500/50' },
+                      { id: 'governance' as Section, label: 'Governance', icon: '⚖️', desc: 'DAO · Lobby · Jobs Board', color: 'from-amber-500/10 to-orange-500/10 border-amber-500/20 hover:border-amber-500/50' },
+                    ]).map(({ id, label, icon, desc, color }) => (
+                      <button key={label} onClick={() => setActiveSection(id)}
+                        className={`bg-gradient-to-br ${color} border rounded-xl p-4 text-left transition-all hover:scale-105`}>
+                        <div className="text-xl mb-1">{icon}</div>
+                        <div className="text-white text-sm font-semibold">{label}</div>
+                        <div className="text-gray-400 text-xs mt-0.5">{desc}</div>
+                      </button>
                     ))}
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <div className="glass rounded-xl p-6">
-                    <h3 className="text-lg font-bold text-white mb-4">Version 1.0 — Core (Deployed)</h3>
-                    <div className="space-y-2">
-                      {[
-                        { icon: '💰', name: 'OICDTreasury',              desc: '61-currency ERC1155 treasury' },
-                        { icon: '🏦', name: 'Fractional Reserve Banking', desc: 'IBAN banking, 46 countries' },
-                        { icon: '🔄', name: 'UniversalAMM',              desc: 'Constant-product token swaps' },
-                        { icon: '🔐', name: 'InviteManager',             desc: 'Gated access via invite codes' },
-                        { icon: '📋', name: 'OGRBlacklist',              desc: 'Compliance blacklist registry' },
-                        { icon: '🌑', name: 'DarkPool',                  desc: 'Anonymous ZK-SNARK trading' },
-                        { icon: '💧', name: 'LaaS',                      desc: 'Liquidity-as-a-Service pools' },
-                        { icon: '💎', name: 'Obsidian Capital',          desc: 'Multi-strategy hedge fund' },
-                        { icon: '📜', name: '2DI Bond Tracker',          desc: 'Infrastructure bond ERC1155' },
-                        { icon: '🏛️', name: 'Prime Brokerage',           desc: 'Institutional margin services' },
-                        { icon: '⚖️', name: 'Sovereign DAO',             desc: 'Ministry governance system' },
-                        { icon: '💱', name: 'Forex Reserves',            desc: '287-corridor FX tracking' },
-                      ].map(({ icon, name, desc }) => (
-                        <div key={name} className="flex items-center gap-3 p-2.5 bg-white/5 rounded-lg">
-                          <span>{icon}</span>
-                          <div>
-                            <p className="text-sm font-medium text-white">{name}</p>
-                            <p className="text-xs text-gray-500">{desc}</p>
-                          </div>
-                          <span className="ml-auto text-xs text-green-400">✓ Live</span>
-                        </div>
-                      ))}
-                    </div>
+                {/* Live Network Activity — all dynamic from contracts */}
+                <div className="glass rounded-xl p-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-bold text-white">Live Network Activity</h3>
+                    <span className="text-xs text-green-400 flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse inline-block" />
+                      Live from chain
+                    </span>
                   </div>
-
-                  <div className="glass rounded-xl p-6">
-                    <h3 className="text-lg font-bold text-white mb-4">Version 2.0 — Expansion</h3>
-
-                    <div className="space-y-2">
-                      {[
-                        { icon: '🏛', name: 'Gov Securities Settlement', desc: 'Municipal, sovereign, corporate bonds', deployed: true },
-                        { icon: '🧱', name: 'Digital Trade Blocks',      desc: 'Tokenized trade finance NFTs', deployed: true },
-                        { icon: '🌐', name: 'OZF Parliament',            desc: 'Inter-governmental assembly', deployed: true },
-                        { icon: '🛡️', name: 'Arms Trade Compliance',     desc: 'ITAR/EAR export license system', deployed: true },
-                        { icon: '🚢', name: 'Infrastructure Assets',     desc: 'Ports, corridors, freight tracking', deployed: true },
-                        { icon: '🏙️', name: 'Special Economic Zones',    desc: 'Co-managed sovereign SEZs', deployed: true },
-                        { icon: '🔮', name: 'Price Oracle Aggregator',   desc: 'Chainlink + Pyth price feeds', deployed: true },
-                        { icon: '⚡', name: 'HFT Engine (GLTE)',         desc: 'High-frequency GLTE trading', deployed: true },
-                        { icon: '🔀', name: 'Sovereign DEX',             desc: 'Atomic FX swap engine', deployed: true },
-                        { icon: '🏷️', name: 'Bond Auction House',        desc: 'Dutch & sealed-bid auctions', deployed: true },
-                        { icon: '👥', name: 'Public Broker Registry',    desc: 'On-chain broker onboarding', deployed: true },
-                        { icon: '🌍', name: 'AVS Platform',              desc: 'Asset Value Securitization', deployed: true },
-                        { icon: '🪙', name: 'OTD Token',                 desc: '500 Octillion supply ERC20 governance', deployed: true },
-                        { icon: '🔮', name: 'Orion Score',               desc: '9-variable LIFO sovereign rating', deployed: true },
-                        { icon: '🤝', name: 'Free Trade Registry',       desc: 'WTO/OZF bilateral agreements', deployed: true },
-                        { icon: '🏗️', name: 'ICF Lending',               desc: '4 loan programs (ICF, First90, FFE)', deployed: true },
-                        { icon: '📦', name: 'Pre-Allocation',            desc: 'Validator/shareholder compound schedule', deployed: true },
-                        { icon: '💼', name: 'Jobs Board',                desc: 'OICD employment marketplace (8 levels)', deployed: true },
-                        { icon: '🏦', name: 'DTX Bourse',               desc: '5-center global exchange (Alpha→Echo)',   deployed: true },
-                        { icon: '📐', name: 'DCM Market Charter',        desc: '4-pillar health scoring (400/400)',       deployed: true },
-                        { icon: '📡', name: 'Price Oracle Dashboard',    desc: 'Chainlink + Pyth + OZF relayer feeds',   deployed: true },
-                        { icon: '📈', name: 'Global Exchange Trading',   desc: '18 exchanges · NYSE, LSE, B3, NSE, Tadawul', deployed: true },
-                      ].map(({ icon, name, desc, deployed }) => (
-                        <div key={name} className="flex items-center gap-3 p-2.5 bg-white/5 rounded-lg">
-                          <span>{icon}</span>
-                          <div>
-                            <p className="text-sm font-medium text-white">{name}</p>
-                            <p className="text-xs text-gray-500">{desc}</p>
-                          </div>
-                          <span className={`ml-auto text-xs ${deployed ? 'text-blue-400' : 'text-amber-400'}`}>
-                            {deployed ? '✓ Deployed' : '⏳ Pending'}
-                          </span>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    {([
+                      { label: 'Validators', value: String(preAllocValidators??0), icon: '🎯', nav: 'pre-alloc' as Section, sub: 'Pre-Alloc' },
+                      { label: 'Shareholders', value: String(preAllocShareholders??0), icon: '📦', nav: 'pre-alloc' as Section, sub: 'Pre-Alloc' },
+                      { label: 'Jobs Posted', value: String(totalJobs??0), icon: '💼', nav: 'jobs-board' as Section, sub: 'Jobs Board' },
+                      { label: 'Jobs Completed', value: String(jobsDone??0), icon: '✅', nav: 'jobs-board' as Section, sub: 'Jobs Board' },
+                      { label: 'Trade Agreements', value: String(tradeAgreements??0), icon: '🤝', nav: 'free-trade' as Section, sub: 'Free Trade' },
+                      { label: 'Bills of Lading', value: String(billsOfLading??0), icon: '📋', nav: 'free-trade' as Section, sub: 'Free Trade' },
+                      { label: 'AVS Assets', value: String(avsAssetCount??0), icon: '🌍', nav: 'avs-platform' as Section, sub: 'AVS Platform' },
+                      { label: 'AVS Countries', value: String(avsCountryCount??0), icon: '🗺️', nav: 'avs-platform' as Section, sub: 'AVS Platform' },
+                      { label: 'ICF Loans', value: String(icfLoanCount??0), icon: '🏗️', nav: 'icf-lending' as Section, sub: 'ICF Lending' },
+                      { label: 'Active Loans', value: String(icfActiveLoans??0), icon: '📈', nav: 'icf-lending' as Section, sub: 'ICF Lending' },
+                      { label: 'Orion Countries', value: String(orionCountryCount??0), icon: '🔮', nav: 'orion-score' as Section, sub: 'Orion Score' },
+                      { label: 'FDI Approved', value: String((orionApproved as string[]|undefined)?.length??0), icon: '✓', nav: 'orion-score' as Section, sub: 'Orion Score' },
+                      { label: 'OTD Holders', value: String(otdHolders??0), icon: '🪙', nav: 'otd-token' as Section, sub: 'OTD Token' },
+                      { label: 'OTD Votes', value: String(otdVotes??0), icon: '⚖️', nav: 'otd-token' as Section, sub: 'OTD Token' },
+                      { label: 'Brokers', value: brokerTotal?.toString()??'0', icon: '👥', nav: 'broker-registry' as Section, sub: 'Broker Registry' },
+                      { label: 'Active Brokers', value: brokerActive?.toString()??'0', icon: '🟢', nav: 'broker-registry' as Section, sub: 'Broker Registry' },
+                    ]).map(({ label, value, icon, nav, sub }) => (
+                      <button key={label} onClick={() => setActiveSection(nav)}
+                        className="p-4 bg-white/5 border border-white/10 rounded-xl text-left hover:bg-white/10 hover:border-white/20 transition-all group">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-lg">{icon}</span>
+                          <span className="text-xs text-gray-600 group-hover:text-gray-400 transition-colors truncate ml-1">{sub} →</span>
                         </div>
-                      ))}
-                    </div>
+                        <p className="text-2xl font-bold text-white">{value}</p>
+                        <p className="text-xs text-gray-400 mt-0.5">{label}</p>
+                      </button>
+                    ))}
                   </div>
                 </div>
 
+                {/* All Systems — navigable grid, no static text */}
+                <div className="glass rounded-xl p-6">
+                  <h3 className="text-lg font-bold text-white mb-4">All 51 Systems</h3>
+                  <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
+                    {navigation.filter(item => item.id !== 'overview').map((item) => (
+                      <button key={item.id} onClick={() => setActiveSection(item.id)}
+                        className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs transition-all text-left ${
+                          activeSection === item.id
+                            ? 'bg-primary-500 text-white shadow-lg shadow-primary-500/20'
+                            : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white border border-white/5 hover:border-white/15'
+                        }`}>
+                        <span>{item.icon}</span>
+                        <span className="truncate">{item.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* System Status — environment + live contract counts */}
                 <div className="glass rounded-xl p-6">
                   <h3 className="text-lg font-bold text-white mb-4">System Status</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                    {[
-                      { label: 'Environment',          value: isLocal ? 'Local Anvil' : 'Arbitrum Sepolia', ok: true },
-                      { label: 'Chain ID',             value: String(chainId),                              ok: true },
-                      { label: 'Core Contracts (13)',    value: 'Deployed',                                   ok: true },
-                      { label: 'Phase 2A Contracts (7)', value: isLocal ? 'Deployed' : 'Not yet',           ok: isLocal },
-                      { label: 'Phase 2C Contracts (4)', value: isLocal ? 'Deployed' : 'Not yet',           ok: isLocal },
-                      { label: 'Phase 3 Contracts (7)',  value: isLocal ? 'Deployed' : 'Not yet',           ok: isLocal },
-                      { label: 'Phase 4 Contracts (2)',  value: isLocal ? 'Deployed' : 'Not yet',           ok: isLocal },
-                      { label: 'ZK Verifier',            value: 'Dev placeholder keys',                     ok: false },
-                      { label: 'Price Oracle',           value: isLocal ? 'Local mode' : 'Not yet',         ok: isLocal },
-                      { label: 'HFT Engine (GLTE)',      value: 'Live',                                     ok: true },
-                    ].map(({ label, value, ok }) => (
+                    {([
+                      { label: 'Environment',           value: isLocal ? 'Local Anvil' : 'Arbitrum Sepolia', ok: true },
+                      { label: 'Chain ID',              value: String(chainId),                              ok: true },
+                      { label: 'Core Contracts (13)',   value: 'Deployed',                                   ok: true },
+                      { label: 'Phase 2A Contracts (7)',value: isLocal ? 'Deployed' : 'Not configured',      ok: isLocal },
+                      { label: 'Phase 2C Contracts (4)',value: isLocal ? 'Deployed' : 'Not configured',      ok: isLocal },
+                      { label: 'Phase 3 Contracts (7)', value: isLocal ? 'Deployed' : 'Not configured',      ok: isLocal },
+                      { label: 'Phase 4 Contracts (2)', value: isLocal ? 'Deployed' : 'Not configured',      ok: isLocal },
+                      { label: 'ZK Verifier',           value: 'Dev placeholder keys',                       ok: false },
+                      { label: 'Pre-Alloc Validators',  value: `${String(preAllocValidators??0)} registered`, ok: true },
+                      { label: 'ICF Active Loans',      value: String(icfActiveLoans??0),                    ok: true },
+                      { label: 'Trade Agreements',      value: String(tradeAgreements??0),                    ok: true },
+                      { label: 'AVS Coverage',          value: `${String(avsAssetCount??0)} assets · ${String(avsCountryCount??0)} countries`, ok: true },
+                    ] as {label:string;value:string;ok:boolean}[]).map(({ label, value, ok }) => (
                       <div key={label} className="flex justify-between items-center p-3 bg-white/5 rounded-lg">
                         <span className="text-sm text-gray-400">{label}</span>
                         <span className={`text-sm font-medium flex items-center gap-1.5 ${ok ? 'text-green-400' : 'text-yellow-400'}`}>
@@ -341,7 +394,10 @@ export default function Home() {
             {activeSection === 'dtx'              && <DTXDashboard />}
             {activeSection === 'dcm-charter'      && <DCMCharter />}
             {activeSection === 'price-oracle'     && <PriceOracleDashboard />}
-            {activeSection === 'exchange-trading' && <GlobalExchangeTrading />}
+            {activeSection === 'exchange-trading' && <TradingTerminal />}
+            {activeSection === 'odcm'             && <ODCMDashboard />}
+            {activeSection === 'sgm-token'        && <SGMTokenDashboard />}
+            {activeSection === 'sgmx-token'       && <SGMXTokenDashboard />}
 
           </main>
         </div>
@@ -365,7 +421,7 @@ export default function Home() {
       <footer className="mt-16 border-t border-white/10 bg-white/5 backdrop-blur-xl">
         <div className="container mx-auto px-6 py-6 text-center">
           <p className="text-sm text-purple-400 font-semibold">OZHUMANILL ZAYED FEDERATION (OZF)</p>
-          <p className="text-xs text-gray-500 mt-1">ShadowDapp Version 4.0 &copy; 2025 · 35 Contracts · 61 Currencies · 287 FX Corridors · 18 Global Exchanges</p>
+          <p className="text-xs text-gray-500 mt-1">ShadowDapp Version 4.0 &copy; 2026 · 33 Contracts · 61 Currencies · 287 FX Corridors · 5 Bourse Centers</p>
         </div>
       </footer>
     </div>
